@@ -2,3 +2,5 @@ build*
 deploy*
 src/test.cpp
 .vscode
+/.vs
+/thirdparty/SokuLib/test
