@@ -30,7 +30,6 @@ private:
     SokuLib::MenuCursor viewCursor;
     SokuLib::Guide guide;
     int orderCursor = -1;
-    int scrollPos = 0;//save modCursor.unknown10 in case of list update causing moving
     int state = 0;
     int optionCount = 0;
     int options[3];
