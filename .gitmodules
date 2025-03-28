@@ -17,7 +17,7 @@
 	branch = v2_2
 [submodule "thirdparty/SokuLib"]
 	path = thirdparty/SokuLib
-	url = https://github.com/SokuDev/SokuLib
+	url = https://github.com/jyanf/Custom_SokuLib.git
 	branch = dev
 [submodule "thirdparty/json"]
 	path = thirdparty/json
