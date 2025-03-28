@@ -114,6 +114,7 @@ ModMenu::ModMenu() {
 	modList.scrollBar->active = true;
 	modList.scrollBar->gauge.set(&modList.scrollLen, 0, 286);
 	modCursor.set(&SokuLib::inputMgrs.input.verticalAxis, modList.names.size());
+	modCursor.unknown04 = rowsInList;
 
 	ModPackage::LoadFromRemote();
 }
@@ -155,6 +156,13 @@ int ModMenu::onProcess() {
 	// // Cursor On List
 	if (this->state == 0) {
 		if (modCursor.update()) {
+			SokuLib::playSEWaveBuffer(0x27);
+			viewDirty = true;
+		}
+		//page rolling
+		else if (abs(SokuLib::inputMgrs.input.horizontalAxis) == 1) {
+			SokuLib::inputMgrs.input.horizontalAxis > 0 ? modCursor.scrollDown() : modCursor.scrollUp();
+			scrollPos = modCursor.unknown10;
 			SokuLib::playSEWaveBuffer(0x27);
 			viewDirty = true;
 		}
@@ -249,8 +257,8 @@ int ModMenu::onProcess() {
 int ModMenu::onRender() {
 	design.render4();
 
-	if (modCursor.pos > scrollPos + 16) {
-		scrollPos = modCursor.pos - 16;
+	if (modCursor.pos >= scrollPos + rowsInList) {
+		scrollPos = modCursor.pos - rowsInList + 1;
 	} else if (modCursor.pos < scrollPos) {
 		scrollPos = modCursor.pos;
 	}
@@ -259,10 +267,10 @@ int ModMenu::onRender() {
 	design.getById(&pos, 100);
 	if (this->state == 0) {
 		SokuLib::MenuCursor::render(pos->x2, pos->y2 + (modCursor.pos - scrollPos)*16, 256);
-		if (orderCursor >= scrollPos && orderCursor <= scrollPos + 16)
+		if (orderCursor >= scrollPos && orderCursor < scrollPos + rowsInList)
 			SokuLib::MenuCursor::render(pos->x2, pos->y2 + (orderCursor - scrollPos)*16, 256);
 	}
-	modList.renderScroll(pos->x2, pos->y2, scrollPos, modList.getLength(), 17);
+	modList.renderScroll(pos->x2, pos->y2, scrollPos, modList.getLength(), rowsInList);
 
 	design.getById(&pos, 200);
 	viewTitle.render(pos->x2, pos->y2);

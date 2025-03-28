@@ -63,6 +63,9 @@ namespace SokuLib
 		}
 
 		bool update();
+		void scrollDown();
+		void scrollUp();
+
 		static void render(float x, float y, float width);
 	};
 }
