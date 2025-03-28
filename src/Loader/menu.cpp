@@ -311,20 +311,20 @@ void ModMenu::updateView(int index) {
 	fontDesc.useOffset = true;
 	font.setIndirect(fontDesc);
 	std::string temp;
-	if (package->isLocal()) temp = "<color 404040>This is a local Package.</color>";
+	if (package->isLocal()) temp = "<color 404040>这是一个本地包。</color>";
 	else {
 		std::string cpStr;
 		th123intl::ConvertCodePage(CP_UTF8, package->version(), cp, cpStr);
-		temp += "Version: <color 606060>" + cpStr + "</color><br>";
+		temp += "版本: <color 808080>" + cpStr + "</color><br>";
 		th123intl::ConvertCodePage(CP_UTF8, package->creator(), cp, cpStr);
-		temp += "Creator: <color 606060>" + cpStr + "</color><br>";
+		temp += "作者: <color 808080>" + cpStr + "</color><br>";
 		th123intl::ConvertCodePage(CP_UTF8, package->description(), cp, cpStr);
-		temp += "Description: <color 606060>" + cpStr + "</color><br>";
-		temp += "Tags: ";
+		temp += "简介: <color 808080>" + cpStr + "</color><br>";
+		temp += "标签: ";
 		for (int i = 0; i < package->tags.size(); ++i) {
 			if (i > 0) temp += ", ";
 			th123intl::ConvertCodePage(CP_UTF8, package->tags[i], cp, cpStr);
-			temp += "<color 606060>" + cpStr + "</color>";
+			temp += "<color 808080>" + cpStr + "</color>";
 		}
 	}
 
@@ -334,21 +334,21 @@ void ModMenu::updateView(int index) {
 
 	if (package->downloading) {
 		this->optionCount = 0;
-		temp = "Downloading ...";
+		temp = "下载中...";
 	} else if (package->fileExists) {
-		temp = (package->isEnabled() ? "Disable<br>" : "Enable<br>");
+		temp = (package->isEnabled() ? "● 关闭<br>" : "● 启用<br>");
 		this->options[0] = OPTION_ENABLE_DISABLE;
-		temp += "Show Files<br>";
+		temp += "● 打开文件位置<br>";
 		this->options[1] = OPTION_SHOW;
 		if (package->requireUpdate) {
-			temp += "Update";
+			temp += "● 更新";
 			this->options[2] = OPTION_DOWNLOAD;
 			this->optionCount = 3;
 		} else {
 			this->optionCount = 2;
 		}
 	} else {
-		temp = "Download";
+		temp = "● 下载";
 		this->options[0] = OPTION_DOWNLOAD;
 		this->optionCount = 1;
 	}
