@@ -161,7 +161,7 @@ int ModMenu::onProcess() {
 		}
 		//page rolling
 		else if (abs(SokuLib::inputMgrs.input.horizontalAxis) == 1) {
-			SokuLib::inputMgrs.input.horizontalAxis > 0 ? modCursor.scrollDown() : modCursor.scrollUp();
+			SokuLib::inputMgrs.input.horizontalAxis > 0 ? modCursor.pgDown() : modCursor.pgUp();
 			scrollPos = modCursor.unknown10;
 			SokuLib::playSEWaveBuffer(0x27);
 			viewDirty = true;
