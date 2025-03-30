@@ -294,7 +294,9 @@ void ModMenu::updateView(int index) {
 		20, 400,
 		false, true, false,
 		100000, 0, 0, 0, 2
-	}; strcpy(fontDesc.faceName, SokuLib::defaultFontName);
+	};
+	if (iniViewFont.size() > 0) strcpy(fontDesc.faceName, iniViewFont.c_str());
+	else strcpy(fontDesc.faceName, SokuLib::defaultFontName);
 	SokuLib::SWRFont font; font.create();
 	int textureId;
 
@@ -320,12 +322,13 @@ void ModMenu::updateView(int index) {
 		temp += "作者: <color 808080>" + cpStr + "</color><br>";
 		th123intl::ConvertCodePage(CP_UTF8, package->description(), cp, cpStr);
 		temp += "简介: <color 808080>" + cpStr + "</color><br>";
-		temp += "标签: ";
+		temp += "标签: <color 808080>";
 		for (int i = 0; i < package->tags.size(); ++i) {
-			if (i > 0) temp += ", ";
+			if (i > 0) temp += "  ";
 			th123intl::ConvertCodePage(CP_UTF8, package->tags[i], cp, cpStr);
-			temp += "<color 808080>" + cpStr + "</color>";
+			temp += "#" + cpStr;
 		}
+		temp += "</color>";
 	}
 
 	SokuLib::textureMgr.createTextTexture(&textureId, temp.c_str(), font, 330, 190, 0, 0);
