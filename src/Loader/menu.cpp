@@ -295,7 +295,7 @@ void ModMenu::updateView(int index) {
 		false, true, false,
 		100000, 0, 0, 0, 2
 	};
-	if (iniViewFont.size() > 0) strcpy(fontDesc.faceName, iniViewFont.c_str());
+	if (!iniViewFont.empty()) strcpy(fontDesc.faceName, iniViewFont.c_str());
 	else strcpy(fontDesc.faceName, SokuLib::defaultFontName);
 	SokuLib::SWRFont font; font.create();
 	int textureId;
@@ -311,24 +311,27 @@ void ModMenu::updateView(int index) {
 	fontDesc.weight = 300;
 	fontDesc.height = 14;
 	fontDesc.useOffset = true;
+	fontDesc.r1 = fontDesc.g1 = fontDesc.b1 = 0xff;
+	fontDesc.r2 = fontDesc.g2 = fontDesc.b2 = 0x80;
 	font.setIndirect(fontDesc);
 	std::string temp;
-	if (package->isLocal()) temp = "<color 404040>这是一个本地包。</color>";
+	std::string cpStr;
+	if (package->isLocal()) temp = "<color 404040>这是一个本地包。</color><br>";
 	else {
-		std::string cpStr;
+		
 		th123intl::ConvertCodePage(CP_UTF8, package->version(), cp, cpStr);
-		temp += "版本: <color 808080>" + cpStr + "</color><br>";
-		th123intl::ConvertCodePage(CP_UTF8, package->creator(), cp, cpStr);
-		temp += "作者: <color 808080>" + cpStr + "</color><br>";
+		temp += "<color a0a0ff>版本: </color>" + cpStr + "<br>";
+	}
+	th123intl::ConvertCodePage(CP_UTF8, package->creator(), cp, cpStr);
+	if (!cpStr.empty()) temp += "<color a0a0ff>作者: </color>" + cpStr + "<br>";
 		th123intl::ConvertCodePage(CP_UTF8, package->description(), cp, cpStr);
-		temp += "简介: <color 808080>" + cpStr + "</color><br>";
-		temp += "标签: <color 808080>";
-		for (int i = 0; i < package->tags.size(); ++i) {
-			if (i > 0) temp += "  ";
-			th123intl::ConvertCodePage(CP_UTF8, package->tags[i], cp, cpStr);
-			temp += "#" + cpStr;
-		}
-		temp += "</color>";
+	if (!cpStr.empty()) temp += "<color a0a0ff>简介: </color>" + cpStr + "<br>";
+	
+	if(package->tags.size()) temp += "<color a0a0ff>标签: </color>";
+	for (int i = 0; i < package->tags.size(); ++i) {
+		if (i > 0) temp += "  ";
+		th123intl::ConvertCodePage(CP_UTF8, package->tags[i], cp, cpStr);
+		temp += "#" + cpStr;
 	}
 
 	SokuLib::textureMgr.createTextTexture(&textureId, temp.c_str(), font, 330, 190, 0, 0);
@@ -339,19 +342,19 @@ void ModMenu::updateView(int index) {
 		this->optionCount = 0;
 		temp = "下载中...";
 	} else if (package->fileExists) {
-		temp = (package->isEnabled() ? "● 关闭<br>" : "● 启用<br>");
+		temp = (package->isEnabled() ? "● <color a0a0ff>关闭</color><br>" : "● <color a0a0ff>启用</color><br>");
 		this->options[0] = OPTION_ENABLE_DISABLE;
-		temp += "● 打开文件位置<br>";
+		temp += "● <color a0a0ff>打开文件位置</color><br>";
 		this->options[1] = OPTION_SHOW;
 		if (package->requireUpdate) {
-			temp += "● 更新";
+			temp += "● <color ff8040>更新</color>";
 			this->options[2] = OPTION_DOWNLOAD;
 			this->optionCount = 3;
 		} else {
 			this->optionCount = 2;
 		}
 	} else {
-		temp = "● 下载";
+		temp = "● <color a0a0ff>下载</color>";
 		this->options[0] = OPTION_DOWNLOAD;
 		this->optionCount = 1;
 	}
