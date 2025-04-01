@@ -369,7 +369,7 @@ void ModMenu::updateView(int index) {
 			this->optionCount = 2;
 		}
 	} else {
-		temp = "║Я <color a0a0ff>обть</color>";
+		temp = "║Я <color 7040b0>обть</color>";
 		this->options[0] = OPTION_DOWNLOAD;
 		this->optionCount = 1;
 	}
