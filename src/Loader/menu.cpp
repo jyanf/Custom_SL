@@ -90,14 +90,14 @@ void ModList::updateList() {
 }
 
 static inline int _getPackageColor(ModPackage* package) {
-	if (package->requireUpdate) return package->isLocal() ? 0x909020 : 0xff8040;
+	if (package->requireUpdate) return package->isLocal() ? 0x909020 : 0xff8040;//local but can sync; downloaded, updatable
 	if (package->isEnabled()) {
 		if (package->package->empty()
 			|| package->package->size() == 1 
-			&& package->package->find("init.lua") != package->package->end()) return 0x40ff40;
-		return 0xff2020;
-	} if (package->isLocal()) return 0x6060d0;
-	return 0x808080;
+			&& package->package->find("init.lua") != package->package->end()) return 0x40ff40;//enabled
+		return 0xff2020;//conflict
+	} if (package->fileExists) return package->data.count("version") && !package->data.value("version", "").empty() ? 0x7040b0 : 0x6060d0;//online downloaded; local
+	return 0x808080;//online, not downloaded
 }
 
 int ModList::appendLine(SokuLib::String& out, void* unknown, SokuLib::Deque<SokuLib::String>& list, int index) {
