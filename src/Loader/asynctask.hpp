@@ -59,3 +59,5 @@ public:
     inline FetchImage() {}
     inline FetchImage(const std::string& fileId) : fileId(fileId) {}
 };
+
+extern std::string iniRemoteConfig;
