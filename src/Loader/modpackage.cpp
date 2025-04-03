@@ -115,6 +115,7 @@ namespace {
 							if (std::filesystem::exists(target)) std::filesystem::remove(target, err);
 							if (!err) std::filesystem::rename(filename, target, err);
 							if (!err) p->path = target;
+							DisablePackage(p);//temporary fix
 
 							if (!err) {
 								p->data["version"] = p->data.value("remoteVersion", "");
