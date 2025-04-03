@@ -333,7 +333,7 @@ void ModMenu::updateView(int index) {
 	font.setIndirect(fontDesc);
 	std::string temp;
 	std::string cpStr;
-	if (package->isLocal()) temp = "<color 404040>这是一只野生Shady包~</color><br>";
+	if (package->isLocal()) temp = "<color 404040>这是一只野生Shady包～</color><br>";
 	else {
 		
 		th123intl::ConvertCodePage(CP_UTF8, package->version(), cp, cpStr);
@@ -364,7 +364,7 @@ void ModMenu::updateView(int index) {
 		temp += "● <color a0a0ff>打开文件位置</color><br>";
 		this->options[1] = OPTION_SHOW;
 		if (package->requireUpdate) {
-			temp += package->isLocal() ? "● <color 909020>下载</color>" : "● <color ff8040>更新</color>";
+			temp += package->isLocal() ? "● <color 7040b0>下载</color>" : "● <color ff8040>更新</color>";
 			this->options[2] = OPTION_DOWNLOAD;
 			this->optionCount = 3;
 		} else {
