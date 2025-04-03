@@ -90,13 +90,15 @@ void ModList::updateList() {
 }
 
 static inline int _getPackageColor(ModPackage* package) {
-	if (package->requireUpdate) return package->isLocal() ? 0x909020 : 0xff8040;//local but can sync; downloaded, updatable
+	if (package->requireUpdate && !package->isLocal()) return 0xff8040;//downloaded, updatable
 	if (package->isEnabled()) {
 		if (package->package->empty()
 			|| package->package->size() == 1 
 			&& package->package->find("init.lua") != package->package->end()) return 0x40ff40;//enabled
 		return 0xff2020;//conflict
-	} if (package->fileExists) return package->data.count("version") && !package->data.value("version", "").empty() ? 0x7040b0 : 0x6060d0;//online downloaded; local
+	} 
+	if (package->requireUpdate && package->isLocal()) return 0x909020;//local, can sync
+	if (package->fileExists) return package->data.count("version") && !package->data.value("version", "").empty() ? 0x7040b0 : 0x6060d0;//downloaded; local
 	return 0x808080;//online, not downloaded
 }
 
@@ -362,7 +364,7 @@ void ModMenu::updateView(int index) {
 		temp += "● <color a0a0ff>打开文件位置</color><br>";
 		this->options[1] = OPTION_SHOW;
 		if (package->requireUpdate) {
-			temp += "● <color ff8040>更新</color>";
+			temp += package->isLocal() ? "● <color 909020>下载</color>" : "● <color ff8040>更新</color>";
 			this->options[2] = OPTION_DOWNLOAD;
 			this->optionCount = 3;
 		} else {
