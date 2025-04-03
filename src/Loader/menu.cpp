@@ -333,7 +333,7 @@ void ModMenu::updateView(int index) {
 	font.setIndirect(fontDesc);
 	std::string temp;
 	std::string cpStr;
-	if (package->isLocal()) temp = "<color 404040>这是一个本地包。</color><br>";
+	if (package->isLocal()) temp = "<color 404040>这是一只野生Shady包~</color><br>";
 	else {
 		
 		th123intl::ConvertCodePage(CP_UTF8, package->version(), cp, cpStr);
