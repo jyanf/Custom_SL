@@ -110,17 +110,11 @@ namespace {
 							std::filesystem::path target(filename);
 							target.replace_extension();
 							std::error_code err;
-							if (std::filesystem::is_directory(target)) {
-								//if (!extractZipToFolder(filename, target, i->second->resumeOffset)) {
-								//	err = std::make_error_code(std::errc::device_or_resource_busy);
-								//} else std::filesystem::remove(filename);
-								target += p->fileExt();
-								std::filesystem::rename(filename, target, err);
-								if (!err) p->path = target;
-							} else {
-								std::filesystem::remove(target, err);
-								if (!err) std::filesystem::rename(filename, target, err);	
-							}
+							auto realExt = p->fileExt();
+							if (target.extension()!=realExt) target += realExt;
+							if (std::filesystem::exists(target)) std::filesystem::remove(target, err);
+							std::filesystem::rename(filename, target, err);
+							if (!err) p->path = target;
 
 							if (!err) {
 								p->data["version"] = p->data.value("remoteVersion", "");
