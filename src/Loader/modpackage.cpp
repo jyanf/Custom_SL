@@ -113,8 +113,14 @@ namespace {
 							auto realExt = p->fileExt();
 							if (target.extension()!=realExt) target += realExt;
 							if (std::filesystem::exists(target)) std::filesystem::remove(target, err);
-							std::filesystem::rename(filename, target, err);
+							if (!err) std::filesystem::rename(filename, target, err);
 							if (!err) p->path = target;
+								std::filesystem::rename(filename, target, err);
+								if (!err) p->path = target;
+							} else {
+								std::filesystem::remove(target, err);
+								if (!err) std::filesystem::rename(filename, target, err);	
+							}
 
 							if (!err) {
 								p->data["version"] = p->data.value("remoteVersion", "");
