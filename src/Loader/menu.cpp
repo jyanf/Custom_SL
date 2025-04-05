@@ -15,6 +15,61 @@ namespace {
 	constexpr int listHeight = 286;
 	constexpr int rowHeight = 16;
 	constexpr int rowsInList = listHeight / rowHeight;
+
+	struct IntlFn {
+		void* (* LoadTranslationPack)(const char* name) = 0;
+		void (* FreeTranslationPack)(void* pack) = 0;
+		const char* (* GetTranslation)(void* pack, const char* name, const char* defName) = 0;
+		bool (* LocalizeFont)(const char* name, SokuLib::FontDescription* fontDesc) = 0;
+
+		IntlFn() {
+			auto handle = GetModuleHandleA("th123intl.dll");
+			if (handle) {
+				LoadTranslationPack = reinterpret_cast<void* (*)(const char*)>
+					(GetProcAddress(handle, "LoadTranslationPack"));
+				FreeTranslationPack = reinterpret_cast<void (*)(void*)>
+					(GetProcAddress(handle, "FreeTranslationPack"));
+				GetTranslation = reinterpret_cast<const char* (*)(void*, const char*, const char*)>
+					(GetProcAddress(handle, "GetTranslation"));
+				LocalizeFont = reinterpret_cast<bool (*)(const char*, SokuLib::FontDescription*)>
+					(GetProcAddress(handle, "LocalizeFont"));
+			}
+		}
+	} *intlFn = 0;
+
+	SokuLib::FontDescription fontTitle {
+		"Tahoma",
+		0xff, 0xa0, 0xff, 0xa0, 0xff, 0xff,
+		20, 400,
+		false, true, false,
+		100000, 0, 0, 0, 2
+	};
+
+	SokuLib::FontDescription fontDesc {
+		"Tahoma",
+		0xff, 0xa0, 0xff, 0xa0, 0xff, 0xff,
+		14, 300,
+		false, true, true,
+		100000, 0, 0, 0, 2
+	};
+
+	struct {
+		const char* localPackage = "<color 404040>This is a local Package.</color>";
+		const char* version = "Version: <color 606060>{}</color>";
+		const char* creator = "Creator: <color 606060>{}</color>";
+		const char* description = "Description: <color 606060>{}</color>";
+		const char* tagsBegin = "Tags: <color 606060>";
+		const char* tagsElement = "#{}";
+		const char* tagsSeparator = "  ";
+		const char* tagsEnd = "</color>";
+
+		const char* downloading = "Downloading ...";
+		const char* optDisable = "Disable";
+		const char* optEnable = "Enable";
+		const char* optShow = "Show Files";
+		const char* optUpdate = "Update";
+		const char* optDownload = "Download";
+	} tMsg;
 }
 
 static void setPackageEnabled(ModPackage* package, bool value) {
@@ -115,6 +170,27 @@ int ModList::appendLine(SokuLib::String& out, void* unknown, SokuLib::Deque<Soku
 }
 
 ModMenu::ModMenu() {
+	if (!intlFn) intlFn = new IntlFn();
+	if (intlFn->LoadTranslationPack && intlFn->GetTranslation) {
+		translationPack    = intlFn->LoadTranslationPack("shady");
+
+		tMsg.localPackage  = intlFn->GetTranslation(translationPack, "menu-local-package", tMsg.localPackage);
+		tMsg.version       = intlFn->GetTranslation(translationPack, "menu-version", tMsg.version);
+		tMsg.creator       = intlFn->GetTranslation(translationPack, "menu-creator", tMsg.creator);
+		tMsg.description   = intlFn->GetTranslation(translationPack, "menu-description", tMsg.description);
+		tMsg.tagsBegin     = intlFn->GetTranslation(translationPack, "menu-tags-begin", tMsg.tagsBegin);
+		tMsg.tagsElement   = intlFn->GetTranslation(translationPack, "menu-tags-element", tMsg.tagsElement);
+		tMsg.tagsSeparator = intlFn->GetTranslation(translationPack, "menu-tags-separator", tMsg.tagsSeparator);
+		tMsg.tagsEnd       = intlFn->GetTranslation(translationPack, "menu-tags-end", tMsg.tagsEnd);
+
+		tMsg.downloading   = intlFn->GetTranslation(translationPack, "menu-downloading", tMsg.downloading);
+		tMsg.optDisable    = intlFn->GetTranslation(translationPack, "menu-option-disable", tMsg.optDisable);
+		tMsg.optEnable     = intlFn->GetTranslation(translationPack, "menu-option-enable", tMsg.optEnable);
+		tMsg.optShow       = intlFn->GetTranslation(translationPack, "menu-option-show", tMsg.optShow);
+		tMsg.optUpdate     = intlFn->GetTranslation(translationPack, "menu-option-update", tMsg.optUpdate);
+		tMsg.optDownload   = intlFn->GetTranslation(translationPack, "menu-option-download", tMsg.optDownload);
+	}
+
 	design.loadResource("shady/downloader.dat");
 	ModPackage::LoadFromFilesystem();
 	(guide.*SokuLib::union_cast<void (SokuLib::Guide::*)(unsigned int)>(0x443160))(89); // Init
@@ -130,6 +206,8 @@ ModMenu::ModMenu() {
 }
 
 ModMenu::~ModMenu() {
+	if (translationPack && intlFn->FreeTranslationPack) intlFn->FreeTranslationPack(translationPack);
+
 	design.clear();
 	modList.clear();
 	if (viewTitle.dxHandle) SokuLib::textureMgr.remove(viewTitle.dxHandle);
@@ -305,19 +383,11 @@ int ModMenu::onRender() {
 void ModMenu::updateView(int index) {
 	auto cp = th123intl::GetTextCodePage();
 	ModPackage* package = ModPackage::descPackage[index];
-	SokuLib::FontDescription fontDesc {
-		"",
-		0xff, 0xa0, 0xff, 0xa0, 0xff, 0xff,
-		20, 400,
-		false, true, false,
-		100000, 0, 0, 0, 2
-	};
-	if (!iniViewFont.empty()) strcpy(fontDesc.faceName, iniViewFont.c_str());
-	else strcpy(fontDesc.faceName, SokuLib::defaultFontName);
 	SokuLib::SWRFont font; font.create();
 	int textureId;
 
-	font.setIndirect(fontDesc);
+	if (intlFn->LocalizeFont) intlFn->LocalizeFont("shady.menu.title", &fontTitle);
+	font.setIndirect(fontTitle);
 	{
 		std::string name; th123intl::ConvertCodePage(CP_UTF8, package->name, cp, name);
 		SokuLib::textureMgr.createTextTexture(&textureId, name.c_str(), font, 330, 24, 0, 0);
@@ -325,30 +395,25 @@ void ModMenu::updateView(int index) {
 	if (viewTitle.dxHandle) SokuLib::textureMgr.remove(viewTitle.dxHandle);
 	viewTitle.setTexture2(textureId, 0, 0, 330, 24);
 
-	fontDesc.weight = 300;
-	fontDesc.height = 14;
-	fontDesc.useOffset = true;
-	fontDesc.r1 = fontDesc.g1 = fontDesc.b1 = 0xff;
-	fontDesc.r2 = fontDesc.g2 = fontDesc.b2 = 0x80;
+	if (intlFn->LocalizeFont) intlFn->LocalizeFont("shady.menu.description", &fontDesc);
 	font.setIndirect(fontDesc);
 	std::string temp;
-	std::string cpStr;
-	if (package->isLocal()) temp = "<color 404040>这是一只野生Shady包～</color><br>";
+	if (package->isLocal()) temp = tMsg.localPackage;
 	else {
-		
+		std::string cpStr;
 		th123intl::ConvertCodePage(CP_UTF8, package->version(), cp, cpStr);
-		temp += "<color a0a0ff>版本: </color>" + cpStr + "<br>";
-	}
-	th123intl::ConvertCodePage(CP_UTF8, package->creator(), cp, cpStr);
-	if (!cpStr.empty()) temp += "<color a0a0ff>作者: </color>" + cpStr + "<br>";
+		temp += std::vformat(tMsg.version, std::make_format_args(cpStr)) + "<br>";
+		th123intl::ConvertCodePage(CP_UTF8, package->creator(), cp, cpStr);
+		temp += std::vformat(tMsg.creator, std::make_format_args(cpStr)) + "<br>";
 		th123intl::ConvertCodePage(CP_UTF8, package->description(), cp, cpStr);
-	if (!cpStr.empty()) temp += "<color a0a0ff>简介: </color>" + cpStr + "<br>";
-	
-	if(package->tags.size()) temp += "<color a0a0ff>标签: </color>";
-	for (int i = 0; i < package->tags.size(); ++i) {
-		if (i > 0) temp += "  ";
-		th123intl::ConvertCodePage(CP_UTF8, package->tags[i], cp, cpStr);
-		temp += "#" + cpStr;
+		temp += std::vformat(tMsg.description, std::make_format_args(cpStr)) + "<br>";
+		temp += tMsg.tagsBegin;
+		for (int i = 0; i < package->tags.size(); ++i) {
+			if (i > 0) temp += tMsg.tagsSeparator;
+			th123intl::ConvertCodePage(CP_UTF8, package->tags[i], cp, cpStr);
+			temp += std::vformat(tMsg.tagsElement, std::make_format_args(cpStr));
+		}
+		temp += tMsg.tagsEnd;
 	}
 
 	SokuLib::textureMgr.createTextTexture(&textureId, temp.c_str(), font, 330, 190, 0, 0);
@@ -357,21 +422,21 @@ void ModMenu::updateView(int index) {
 
 	if (package->downloading) {
 		this->optionCount = 0;
-		temp = "下载中...";
+		temp = tMsg.downloading;
 	} else if (package->fileExists) {
-		temp = (package->isEnabled() ? "● <color a0a0ff>关闭</color><br>" : "● <color a0a0ff>启用</color><br>");
+		temp = (package->isEnabled() ? tMsg.optDisable : tMsg.optEnable); temp += "<br>";
 		this->options[0] = OPTION_ENABLE_DISABLE;
-		temp += "● <color a0a0ff>打开文件位置</color><br>";
+		temp += tMsg.optShow; temp += "<br>";
 		this->options[1] = OPTION_SHOW;
 		if (package->requireUpdate) {
-			temp += package->isLocal() ? "● <color 7040b0>下载</color>" : "● <color ff8040>更新</color>";
+			temp += tMsg.optUpdate;
 			this->options[2] = OPTION_DOWNLOAD;
 			this->optionCount = 3;
 		} else {
 			this->optionCount = 2;
 		}
 	} else {
-		temp = "● <color 7040b0>下载</color>";
+		temp = tMsg.optDownload;
 		this->options[0] = OPTION_DOWNLOAD;
 		this->optionCount = 1;
 	}
