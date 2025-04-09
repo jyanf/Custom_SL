@@ -47,7 +47,7 @@ namespace {
 
 	SokuLib::FontDescription fontDesc {
 		"Tahoma",
-		0xff, 0xa0, 0xff, 0xa0, 0xff, 0xff,
+		0xff, 0x80, 0xff, 0x80, 0xff, 0x80,
 		14, 300,
 		false, true, true,
 		100000, 0, 0, 0, 2
@@ -385,8 +385,8 @@ void ModMenu::updateView(int index) {
 	ModPackage* package = ModPackage::descPackage[index];
 	SokuLib::SWRFont font; font.create();
 	int textureId;
-
-	if (intlFn->LocalizeFont) intlFn->LocalizeFont("shady.menu.title", &fontTitle);
+	if (!iniViewFont.empty()) strcpy(fontTitle.faceName, iniViewFont.c_str());
+	else if (intlFn->LocalizeFont) intlFn->LocalizeFont("shady.menu.title", &fontTitle);
 	font.setIndirect(fontTitle);
 	{
 		std::string name; th123intl::ConvertCodePage(CP_UTF8, package->name, cp, name);
@@ -394,19 +394,20 @@ void ModMenu::updateView(int index) {
 	}
 	if (viewTitle.dxHandle) SokuLib::textureMgr.remove(viewTitle.dxHandle);
 	viewTitle.setTexture2(textureId, 0, 0, 330, 24);
-
-	if (intlFn->LocalizeFont) intlFn->LocalizeFont("shady.menu.description", &fontDesc);
+	if (!iniViewFont.empty()) strcpy(fontDesc.faceName, iniViewFont.c_str());
+	else if (intlFn->LocalizeFont) intlFn->LocalizeFont("shady.menu.description", &fontDesc);
 	font.setIndirect(fontDesc);
-	std::string temp;
+	std::string temp, cpStr;
 	if (package->isLocal()) temp = tMsg.localPackage;
 	else {
-		std::string cpStr;
 		th123intl::ConvertCodePage(CP_UTF8, package->version(), cp, cpStr);
-		temp += std::vformat(tMsg.version, std::make_format_args(cpStr)) + "<br>";
-		th123intl::ConvertCodePage(CP_UTF8, package->creator(), cp, cpStr);
-		temp += std::vformat(tMsg.creator, std::make_format_args(cpStr)) + "<br>";
-		th123intl::ConvertCodePage(CP_UTF8, package->description(), cp, cpStr);
-		temp += std::vformat(tMsg.description, std::make_format_args(cpStr)) + "<br>";
+		temp = std::vformat(tMsg.version, std::make_format_args(cpStr));
+	} temp += "<br>";
+	th123intl::ConvertCodePage(CP_UTF8, package->creator(), cp, cpStr);
+	if (!cpStr.empty()) temp += std::vformat(tMsg.creator, std::make_format_args(cpStr)) + "<br>";
+	th123intl::ConvertCodePage(CP_UTF8, package->description(), cp, cpStr);
+	if (!cpStr.empty()) temp += std::vformat(tMsg.description, std::make_format_args(cpStr)) + "<br>";
+	if (package->tags.size()) {
 		temp += tMsg.tagsBegin;
 		for (int i = 0; i < package->tags.size(); ++i) {
 			if (i > 0) temp += tMsg.tagsSeparator;
@@ -429,7 +430,7 @@ void ModMenu::updateView(int index) {
 		temp += tMsg.optShow; temp += "<br>";
 		this->options[1] = OPTION_SHOW;
 		if (package->requireUpdate) {
-			temp += tMsg.optUpdate;
+			temp += package->isLocal() ? tMsg.optDownload : tMsg.optUpdate;
 			this->options[2] = OPTION_DOWNLOAD;
 			this->optionCount = 3;
 		} else {
