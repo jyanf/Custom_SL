@@ -14,6 +14,14 @@ set(SRC_LOADER_Loader
 )
 source_group("Source Files\\Loader" FILES ${SRC_LOADER_Loader})
 
+set(SHADY_TARGET_NAME "shady-loader")
+set(SHADY_NAME "Shady Loader")
+set(SHADY_DESCRIPTION "A module to load multiple custom packages into the game.")
+
+set(SRC_LOADER_VERSION version.rc)
+configure_file(version.rc.in version.rc @ONLY)
+list(APPEND SRC_LOADER_Loader ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
+
 add_library(shady-loader MODULE ${SRC_LOADER_Common} ${SRC_LOADER_Loader})
 target_link_libraries(shady-loader -static shady-core shady-lualib libcurl json)
 set_target_properties(shady-loader PROPERTIES PREFIX "")
