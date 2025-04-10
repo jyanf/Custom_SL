@@ -38,6 +38,13 @@ public:
     inline std::string creator() {return data.value("creator", "");}
     inline std::string description() {return data.value("description", "");}
     inline std::string preview() {return data.value("preview", "");}
+	inline std::string fileExt() {
+        std::string ext= file();
+        auto pos = ext.find_last_of('/');
+		ext = ext.substr(pos + 1);
+        pos = ext.find_last_of('.');
+        return pos != std::string::npos ? ext.substr(pos) : "";
+	}
 
     void* script = 0;
 

@@ -7,7 +7,7 @@
 
 namespace {
     std::string cookieFile = (ShadyUtil::TempDir() / "shady-cookies.jar").string();
-    std::string baseJson = "http://shady.pinkysmile.fr/config.json";
+    std::string &baseJson = iniRemoteConfig;
 }
 
 static size_t write_callback(char *ptr, size_t size, size_t nmemb, void *userdata) {
@@ -40,7 +40,10 @@ void FetchFile::run() {
         if (CURLUE_OK != curl_url_set(urlp, CURLUPART_URL, fileId.c_str(), 0)) return;
     } else {
         if (CURLUE_OK != curl_url_set(urlp, CURLUPART_URL, baseJson.c_str(), 0)) return;
-        if (CURLUE_OK != curl_url_set(urlp, CURLUPART_PATH, ("/"+fileId).c_str(), 0)) return;
+        char *buffer=nullptr;
+        if (CURLUE_OK != curl_url_get(urlp, CURLUPART_PATH, &buffer, 0)) return;
+        std::string path = buffer ? buffer : "/"; 
+        if (CURLUE_OK != curl_url_set(urlp, CURLUPART_PATH, (path.substr(0, path.find_last_of('/') + 1) + fileId).c_str(), 0)) return;
     }
 
     curl_easy_setopt(curl, CURLOPT_AUTOREFERER, 1L);
@@ -109,7 +112,10 @@ void FetchImage::run() {
         if (CURLUE_OK != curl_url_set(urlp, CURLUPART_URL, fileId.c_str(), 0)) return;
     } else {
         if (CURLUE_OK != curl_url_set(urlp, CURLUPART_URL, baseJson.c_str(), 0)) return;
-        if (CURLUE_OK != curl_url_set(urlp, CURLUPART_PATH, ("/"+fileId).c_str(), 0)) return;
+        char * buffer = nullptr;
+        if (CURLUE_OK != curl_url_get(urlp, CURLUPART_PATH, &buffer, 0)) return;
+        std::string path = buffer ? buffer : "/";
+        if (CURLUE_OK != curl_url_set(urlp, CURLUPART_PATH, (path.substr(0, path.find_last_of('/') + 1) + fileId).c_str(), 0)) return;
     }
 
     curl_easy_setopt(curl, CURLOPT_AUTOREFERER, 1L);

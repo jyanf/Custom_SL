@@ -4,8 +4,9 @@
 
 class ModList : public SokuLib::CFileList {
 public:
+    SokuLib::CDesign::Sprite* loadMessage = 0;
     SokuLib::CDesign::Gauge* scrollBar;
-    int scrollLen;
+    int scrollHeight;
 
     ModList();
     void renderScroll(float x, float y, int offset, int size, int view);
@@ -30,7 +31,6 @@ private:
     SokuLib::MenuCursor viewCursor;
     SokuLib::Guide guide;
     int orderCursor = -1;
-    int scrollPos = 0;//save modCursor.unknown10 in case of list update causing moving
     int state = 0;
     int optionCount = 0;
     int options[3];

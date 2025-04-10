@@ -11,6 +11,10 @@ namespace {
 	_locale_t intlLocale;
 
 	enum :int { OPTION_ENABLE_DISABLE, OPTION_DOWNLOAD, OPTION_SHOW };
+
+	constexpr int listHeight = 286;
+	constexpr int rowHeight = 16;
+	constexpr int rowsInList = listHeight / rowHeight;
 }
 
 static void setPackageEnabled(ModPackage* package, bool value) {
@@ -53,13 +57,16 @@ ModList::ModList() : CFileList() {
 }
 
 void ModList::renderScroll(float x, float y, int offset, int size, int view) {
-	size = size == 0 ? 1 : size;
 	// just set values, render is done on CDesign
-	this->scrollLen = size < view ? 286 : view*286/size;
-	this->scrollBar->y1 = 286*offset/size + this->scrollLen - 286;
+	if (size <= rowsInList) {
+		this->scrollHeight = 0;
+	} else {
+		this->scrollHeight = size < view ? listHeight : view*listHeight/size;
+		this->scrollBar->y1 = listHeight*offset/size + this->scrollHeight - listHeight;
+	}
 
 	for (int i = 0; i < view && i < size - offset; ++i) {
-		this->renderLine(x, y + i*16, i + offset);
+		this->renderLine(x, y + i*rowHeight, i + offset);
 	}
 }
 
@@ -78,18 +85,21 @@ void ModList::updateList() {
 		this->names.back().assign(name.c_str(), name.size());
 		this->types.push_back(package->isEnabled());
 	}
+	if (this->loadMessage) this->loadMessage->active = this->names.size() == 0;
 	this->updateResources();
 }
 
 static inline int _getPackageColor(ModPackage* package) {
-	if (package->requireUpdate) return package->isLocal() ? 0x909020 : 0xff8040;
+	if (package->requireUpdate && !package->isLocal()) return 0xff8040;//downloaded, updatable
 	if (package->isEnabled()) {
 		if (package->package->empty()
 			|| package->package->size() == 1 
-			&& package->package->find("init.lua") != package->package->end()) return 0x40ff40;
-		return 0xff2020;
-	} if (package->isLocal()) return 0x6060d0;
-	return 0x808080;
+			&& package->package->find("init.lua") != package->package->end()) return 0x40ff40;//enabled
+		return 0xff2020;//conflict
+	} 
+	if (package->requireUpdate && package->isLocal()) return 0x909020;//local, can sync
+	if (package->fileExists) return package->data.count("version") && !package->data.value("version", "").empty() ? 0x7040b0 : 0x6060d0;//downloaded; local
+	return 0x808080;//online, not downloaded
 }
 
 int ModList::appendLine(SokuLib::String& out, void* unknown, SokuLib::Deque<SokuLib::String>& list, int index) {
@@ -112,10 +122,10 @@ ModMenu::ModMenu() {
 
 	design.getById((SokuLib::CDesign::Sprite**)&modList.scrollBar, 101);
 	modList.scrollBar->active = true;
-	modList.scrollBar->gauge.set(&modList.scrollLen, 0, 286);
-	modCursor.set(&SokuLib::inputMgrs.input.verticalAxis, modList.names.size());
-	modCursor.unknown04 = rowsInList;
+	modList.scrollBar->gauge.set(&modList.scrollHeight, 0, listHeight);
+	modCursor.set(&SokuLib::inputMgrs.input.verticalAxis, modList.names.size(), 0, rowsInList);
 
+	design.getById(&modList.loadMessage, 300);
 	ModPackage::LoadFromRemote();
 }
 
@@ -141,9 +151,9 @@ int ModMenu::onProcess() {
 	if (ModPackage::descMutex.try_lock_shared()) {
 		if (listDirty) {
 			modList.updateList();
-			modCursor.set(&SokuLib::inputMgrs.input.verticalAxis, modList.names.size(), modCursor.pos);
+			modCursor.max = modList.names.size() == 0 ? 1 : modList.names.size();
 		}
-		if (viewDirty) this->updateView(modCursor.pos);
+		if (viewDirty && modCursor.pos < modList.names.size()) this->updateView(modCursor.pos);
 		ModPackage::descMutex.unlock_shared();
 		viewDirty = listDirty = false;
 	}
@@ -158,13 +168,19 @@ int ModMenu::onProcess() {
 		if (modCursor.update()) {
 			SokuLib::playSEWaveBuffer(0x27);
 			viewDirty = true;
-		}
-		//page rolling
-		else if (abs(SokuLib::inputMgrs.input.horizontalAxis) == 1) {
-			SokuLib::inputMgrs.input.horizontalAxis > 0 ? modCursor.pgDown() : modCursor.pgUp();
-			scrollPos = modCursor.unknown10;
-			SokuLib::playSEWaveBuffer(0x27);
-			viewDirty = true;
+		} else if (modCursor.max > modCursor.dRows) {
+			// page rolling
+			if (SokuLib::inputMgrs.input.horizontalAxis == 1) {
+				modCursor.pgDn();
+				if (modCursor.pgPos > modCursor.max - modCursor.dRows)
+					modCursor.pgPos = modCursor.max - modCursor.dRows;
+				SokuLib::playSEWaveBuffer(0x27);
+				viewDirty = true;
+			} else if (SokuLib::inputMgrs.input.horizontalAxis == -1) {
+				modCursor.pgUp();
+				SokuLib::playSEWaveBuffer(0x27);
+				viewDirty = true;
+			}
 		}
 
 		if (SokuLib::inputMgrs.input.c == 1) {
@@ -257,27 +273,27 @@ int ModMenu::onProcess() {
 int ModMenu::onRender() {
 	design.render4();
 
-	if (modCursor.pos >= scrollPos + rowsInList) {
-		scrollPos = modCursor.pos - rowsInList + 1;
-	} else if (modCursor.pos < scrollPos) {
-		scrollPos = modCursor.pos;
+	if (modCursor.pos >= modCursor.pgPos + rowsInList) {
+		modCursor.pgPos = modCursor.pos - rowsInList + 1;
+	} else if (modCursor.pos < modCursor.pgPos) {
+		modCursor.pgPos = modCursor.pos;
 	}
 
 	SokuLib::CDesign::Object* pos;
 	design.getById(&pos, 100);
-	if (this->state == 0) {
-		SokuLib::MenuCursor::render(pos->x2, pos->y2 + (modCursor.pos - scrollPos)*16, 256);
-		if (orderCursor >= scrollPos && orderCursor < scrollPos + rowsInList)
-			SokuLib::MenuCursor::render(pos->x2, pos->y2 + (orderCursor - scrollPos)*16, 256);
+	if (this->state == 0 && modList.getLength()) {
+		SokuLib::MenuCursor::render(pos->x2, pos->y2 + (modCursor.pos - modCursor.pgPos)*rowHeight, 256);
+		if (orderCursor >= modCursor.pgPos && orderCursor < modCursor.pgPos + rowsInList)
+			SokuLib::MenuCursor::render(pos->x2, pos->y2 + (orderCursor - modCursor.pgPos)*rowHeight, 256);
 	}
-	modList.renderScroll(pos->x2, pos->y2, scrollPos, modList.getLength(), rowsInList);
+	modList.renderScroll(pos->x2, pos->y2, modCursor.pgPos, modList.getLength(), rowsInList);
 
 	design.getById(&pos, 200);
 	viewTitle.render(pos->x2, pos->y2);
 	design.getById(&pos, 201);
 	viewContent.render(pos->x2, pos->y2);
 	design.getById(&pos, 202);
-	if (this->state == 1) SokuLib::MenuCursor::render(pos->x2, pos->y2 + viewCursor.pos*16, 120);
+	if (this->state == 1) SokuLib::MenuCursor::render(pos->x2, pos->y2 + viewCursor.pos*rowHeight, 120);
 	viewOption.render(pos->x2, pos->y2);
 	design.getById(&pos, 203);
 	if(viewPreview.dxHandle) viewPreview.renderScreen(pos->x2, pos->y2, pos->x2 + 200, pos->y2 + 150);
@@ -295,7 +311,9 @@ void ModMenu::updateView(int index) {
 		20, 400,
 		false, true, false,
 		100000, 0, 0, 0, 2
-	}; strcpy(fontDesc.faceName, SokuLib::defaultFontName);
+	};
+	if (!iniViewFont.empty()) strcpy(fontDesc.faceName, iniViewFont.c_str());
+	else strcpy(fontDesc.faceName, SokuLib::defaultFontName);
 	SokuLib::SWRFont font; font.create();
 	int textureId;
 
@@ -310,23 +328,27 @@ void ModMenu::updateView(int index) {
 	fontDesc.weight = 300;
 	fontDesc.height = 14;
 	fontDesc.useOffset = true;
+	fontDesc.r1 = fontDesc.g1 = fontDesc.b1 = 0xff;
+	fontDesc.r2 = fontDesc.g2 = fontDesc.b2 = 0x80;
 	font.setIndirect(fontDesc);
 	std::string temp;
-	if (package->isLocal()) temp = "<color 404040>This is a local Package.</color>";
+	std::string cpStr;
+	if (package->isLocal()) temp = "<color 404040>这是一只野生Shady包～</color><br>";
 	else {
-		std::string cpStr;
+		
 		th123intl::ConvertCodePage(CP_UTF8, package->version(), cp, cpStr);
-		temp += "Version: <color 606060>" + cpStr + "</color><br>";
-		th123intl::ConvertCodePage(CP_UTF8, package->creator(), cp, cpStr);
-		temp += "Creator: <color 606060>" + cpStr + "</color><br>";
+		temp += "<color a0a0ff>版本: </color>" + cpStr + "<br>";
+	}
+	th123intl::ConvertCodePage(CP_UTF8, package->creator(), cp, cpStr);
+	if (!cpStr.empty()) temp += "<color a0a0ff>作者: </color>" + cpStr + "<br>";
 		th123intl::ConvertCodePage(CP_UTF8, package->description(), cp, cpStr);
-		temp += "Description: <color 606060>" + cpStr + "</color><br>";
-		temp += "Tags: ";
-		for (int i = 0; i < package->tags.size(); ++i) {
-			if (i > 0) temp += ", ";
-			th123intl::ConvertCodePage(CP_UTF8, package->tags[i], cp, cpStr);
-			temp += "<color 606060>" + cpStr + "</color>";
-		}
+	if (!cpStr.empty()) temp += "<color a0a0ff>简介: </color>" + cpStr + "<br>";
+	
+	if(package->tags.size()) temp += "<color a0a0ff>标签: </color>";
+	for (int i = 0; i < package->tags.size(); ++i) {
+		if (i > 0) temp += "  ";
+		th123intl::ConvertCodePage(CP_UTF8, package->tags[i], cp, cpStr);
+		temp += "#" + cpStr;
 	}
 
 	SokuLib::textureMgr.createTextTexture(&textureId, temp.c_str(), font, 330, 190, 0, 0);
@@ -335,21 +357,21 @@ void ModMenu::updateView(int index) {
 
 	if (package->downloading) {
 		this->optionCount = 0;
-		temp = "Downloading ...";
+		temp = "下载中...";
 	} else if (package->fileExists) {
-		temp = (package->isEnabled() ? "Disable<br>" : "Enable<br>");
+		temp = (package->isEnabled() ? "● <color a0a0ff>关闭</color><br>" : "● <color a0a0ff>启用</color><br>");
 		this->options[0] = OPTION_ENABLE_DISABLE;
-		temp += "Show Files<br>";
+		temp += "● <color a0a0ff>打开文件位置</color><br>";
 		this->options[1] = OPTION_SHOW;
 		if (package->requireUpdate) {
-			temp += "Update";
+			temp += package->isLocal() ? "● <color 7040b0>下载</color>" : "● <color ff8040>更新</color>";
 			this->options[2] = OPTION_DOWNLOAD;
 			this->optionCount = 3;
 		} else {
 			this->optionCount = 2;
 		}
 	} else {
-		temp = "Download";
+		temp = "● <color 7040b0>下载</color>";
 		this->options[0] = OPTION_DOWNLOAD;
 		this->optionCount = 1;
 	}
