@@ -12,7 +12,7 @@ static int _print(lua_State* L) {
         line.append(str, size);
     }
 
-    Logger::Debug(line);
+    Logger::Info(line);
     return 0;
 }
 

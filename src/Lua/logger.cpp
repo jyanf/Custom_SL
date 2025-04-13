@@ -85,11 +85,11 @@ void Logger::Render() {
 
 static std::string getTypeName(int type) {
     switch (type) {
-        case Logger::LOG_DEBUG: return "D";
-        case Logger::LOG_ERROR: return "E";
-        case Logger::LOG_INFO: return "I";
-        case Logger::LOG_WARNING: return "W";
-        default: return "<untyped>";
+        case Logger::LOG_DEBUG: return "D: ";
+        case Logger::LOG_ERROR: return "E: ";
+        case Logger::LOG_INFO: return ">>";
+        case Logger::LOG_WARNING: return "W: ";
+        default: return "<untyped> ";
     }
 }
 
@@ -97,8 +97,8 @@ void Logger::Log(int type, const std::string& text) {
     if ((type & logFlags) == 0) return;
 
     std::lock_guard guard(consoleLock);
-    logContent.push_back(getTypeName(type) + ": " + text);
-    if (logFile.is_open()) logFile << getTypeName(type) + ": " + text << std::endl;
+    logContent.push_back(getTypeName(type) + text);
+    if (logFile.is_open()) logFile << getTypeName(type) + text << std::endl;
     isDirty = true; std::time(&timerStart);
 
     // size limiting
