@@ -22,6 +22,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+# generate pdb file for release build (https://stackoverflow.com/a/31264946)
+SET(CMAKE_MODULE_LINKER_FLAGS_RELEASE "${CMAKE_MODULE_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF")
 
 set(SHADY_ENABLE_EXECUTABLE TRUE CACHE BOOL "Enable executable building")
 set(SHADY_ENABLE_TEST FALSE CACHE BOOL "Enable test building")
