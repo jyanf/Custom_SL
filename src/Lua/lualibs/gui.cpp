@@ -372,7 +372,7 @@ bool ShadyLua::MenuProxy::ShowChoice(const char* text, bool defaultYes) {
 
 bool ShadyLua::MenuProxy::RemoveMessage() {
     bool old = BoxSprite && BoxSprite->active;
-    reinterpret_cast<void(__stdcall*)(void)>(0x443730)();
+    reinterpret_cast<void(__stdcall*)(void)>(0x4439c0)();
     return old;
 }
 
