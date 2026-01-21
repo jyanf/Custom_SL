@@ -25,7 +25,7 @@ BEGIN
             VALUE "InternalName", "@SHADY_TARGET_NAME@"
             VALUE "OriginalFilename", "@SHADY_TARGET_NAME@.dll"
             VALUE "ProductName", "@SHADY_NAME@"
-            VALUE "ProductVersion", "@SL_VERSION@b"
+            VALUE "ProductVersion", "@SL_VERSION@-my"
             VALUE "License", "LGPL\0"
         END
     END
