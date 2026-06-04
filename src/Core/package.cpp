@@ -169,7 +169,7 @@ ShadyCore::FileType ShadyCore::Package::iterator::fileType() const {
 		break;
 	case FileType::TYPE_SFX:
 		ft.format = ft.extValue == FileType::getExtValue(".cv3")
-			? FileType::SFX_GAME : FileType::SFX_GAME;
+			? FileType::SFX_GAME : FileType::SFX_WAV;
 		break;
 	case FileType::TYPE_BGM:
 		ft.format = FileType::BGM_OGG;
