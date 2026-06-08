@@ -101,7 +101,7 @@ namespace {
             size_t c = argc < lua_gettop(L2) ? argc : lua_gettop(L2);
             lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
             lua_pushnil(L);
-            for (int i = 0; i < c; ++i) lua_pushinteger(L, lua_tointeger(L2, i));
+            for (int i = 0; i < c; ++i) lua_pushinteger(L, lua_tointeger(L2, i+1));
 
             auto ret = lua_pcall(L, c+1, 1, 0);
             if (ret) {
