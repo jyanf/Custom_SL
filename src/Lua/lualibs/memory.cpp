@@ -97,23 +97,38 @@ namespace {
         int luacall(lua_State* L2) {
             if (!enabled) return 0;
             std::lock_guard scriptGuard(ShadyLua::ScriptMap[L]->mutex);
-
-            size_t c = argc < lua_gettop(L2) ? argc : lua_gettop(L2);
+            size_t c = lua_gettop(L2);
+            c = (c >= 1) ? (c - 1) : 0;//exclude Callback self
+            c = min(c, argc);
+            
+            auto o = lua_gettop(L);
             lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
-            lua_pushnil(L);
-            for (int i = 0; i < c; ++i) lua_pushinteger(L, lua_tointeger(L2, i+1));
+			lua_pushnil(L);//for fake cpu state parameter
+            if (L2 != L) {//real IPC
+                for (int i = 0; i < c; ++i) lua_pushinteger(L, lua_tointeger(L2, i+2));
 
-            auto ret = lua_pcall(L, c+1, 1, 0);
-            if (ret) {
-                Logger::Error(lua_tostring(L, -1));
-                lua_pop(L, 1);
-                return 0;
+                auto ret = lua_pcall(L, c+1, LUA_MULTRET, 0);
+                if (ret) {
+                    Logger::Error(lua_tostring(L, -1));
+                    lua_settop(L, o);
+                    return 0;
+                }
+                int nret = lua_gettop(L) - o;
+                for (int i = 0; i < nret; i++) {
+                    lua_pushinteger(L2, lua_tointeger(L, o + 1 + i));
+                }
+                lua_settop(L, o);
+                return nret;
+            } else {//call from the same state (for test?)
+                for (int i = 0; i < c; ++i) lua_pushvalue(L, i+2);
+                auto ret = lua_pcall(L, c + 1, LUA_MULTRET, 0);
+                if (ret) {
+                    Logger::Error(lua_tostring(L, -1));
+                    lua_settop(L, o);
+                    return 0;
+                }
+                return lua_gettop(L)-o;
             }
-
-            int retValue = lua_tointeger(L, 1);
-            lua_pop(L, 1);
-            lua_pushinteger(L2, retValue);
-            return 1;
         }
     };
 
