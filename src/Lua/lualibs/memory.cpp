@@ -14,13 +14,13 @@ namespace {
 
     class FuncCall : public RefCountedObject {
     public:
-        lua_State* const L;
+        //lua_State* const L;
         size_t addrOrIndex;
         const size_t argc;
         bool isThisCall, isVirtual;
 
         inline FuncCall(lua_State* L, size_t addrOrIndex, size_t argc, bool thisCall, bool isVirtual)
-            : L(L), addrOrIndex(addrOrIndex), argc(argc), isThisCall(thisCall), isVirtual(isVirtual) {}
+            : addrOrIndex(addrOrIndex), argc(argc), isThisCall(thisCall), isVirtual(isVirtual) {}
 
         int luacall(lua_State* L) {
             size_t c = argc + (isThisCall ? 1 : 0);
@@ -61,6 +61,79 @@ namespace {
 
 #pragma optimize( "", off )
     class Callback : public RefCountedObject {
+        using t_copyfn = void(lua_State* Ls, int index, lua_State* Lt);
+        static t_copyfn* get_userdata_copier(lua_State* Ls, int index) {
+            int result = lua_getmetatable(Ls, index);
+            if (result == 0) return nullptr;
+            if (!lua_istable(Ls, -1)) {
+                lua_pop(Ls, 1);
+                return nullptr;
+            }
+            auto buffer = ShadyLua::ScriptMap[Ls]->IPCCopierBuffer;
+			auto iter = buffer.find(lua_topointer(Ls, -1));
+            lua_pop(Ls, 1);
+            if (iter != buffer.end()) {
+                return iter->second;
+			} return nullptr;
+        }
+        static int interstate_copy(lua_State* Ls, int index, lua_State* Lt) {
+            index = lua_absindex(Ls, index);
+            auto t = lua_type(Ls, index);
+            switch (t) {
+            case LUA_TNIL:
+                lua_pushnil(Lt);
+                break;
+            case LUA_TBOOLEAN:
+                lua_pushboolean(Lt, lua_toboolean(Ls, index));
+                break;
+            case LUA_TNUMBER:
+                if (lua_isinteger(Ls, index)) {
+                    lua_pushinteger(Lt, lua_tointeger(Ls, index));
+                } else {
+                    lua_pushnumber(Lt, lua_tonumber(Ls, index));
+                }
+                break;
+            case LUA_TSTRING: {
+                size_t len; const char* str = lua_tolstring(Ls, index, &len);
+                lua_pushlstring(Lt, str, len);
+                break;
+            }
+            case LUA_TTABLE: {
+                int o = lua_gettop(Lt);
+                lua_newtable(Lt);
+                lua_pushnil(Ls);
+                while (lua_next(Ls, index) != 0) {
+                    int ret = interstate_copy(Ls, -2, Lt); // copy key
+                    if (ret) {
+                        lua_pop(Ls, 2);
+                        lua_settop(Lt, o);
+                        return ret;
+                    }
+                    ret = interstate_copy(Ls, -1, Lt); // copy value; didn't resolve case `t.self=t`
+                    if (ret) {
+                        lua_pop(Ls, 2);
+                        lua_settop(Lt, o);
+                        return ret;
+                    }
+                    lua_settable(Lt, -3);
+                    lua_pop(Ls, 1);
+                }
+                break;
+            }
+            case LUA_TLIGHTUSERDATA:
+                lua_pushlightuserdata(Lt, lua_touserdata(Ls, index));
+                break;
+            case LUA_TUSERDATA: {
+                auto fn = get_userdata_copier(Ls, index);
+                if (fn == nullptr) return 2;
+                fn(Ls, index, Lt);
+                break;
+            }
+            default:
+                return 1;
+            }
+            return 0;
+        }
     public:
         lua_State* const L;
         const int ref;
@@ -93,7 +166,7 @@ namespace {
                 return false;
             }
         }
-
+		
         int luacall(lua_State* L2) {
             if (!enabled) return 0;
             std::lock_guard scriptGuard(ShadyLua::ScriptMap[L]->mutex);
@@ -105,7 +178,14 @@ namespace {
             lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
 			lua_pushnil(L);//for fake cpu state parameter
             if (L2 != L) {//real IPC
-                for (int i = 0; i < c; ++i) lua_pushinteger(L, lua_tointeger(L2, i+2));
+                //for (int i = 0; i < c; ++i) lua_pushinteger(L, lua_tointeger(L2, i+2));
+                for (int k = 2; k < c + 2; ++k) {
+                    //auto arg = luabridge::LuaRef::fromStack(L2, k); arg.push(L);
+                    if (interstate_copy(L2, k, L)) {
+                        lua_settop(L, o);
+                        return luaL_error(L2, "IPC: parameter contains unsupported argument type.");
+                    }
+                }
 
                 auto ret = lua_pcall(L, c+1, LUA_MULTRET, 0);
                 if (ret) {
@@ -114,8 +194,13 @@ namespace {
                     return 0;
                 }
                 int nret = lua_gettop(L) - o;
-                for (int i = 0; i < nret; i++) {
-                    lua_pushinteger(L2, lua_tointeger(L, o + 1 + i));
+                for (int k = o+1; k < nret+o+1; k++) {
+                    //lua_pushinteger(L2, lua_tointeger(L, k));
+                    //auto rets = luabridge::LuaRef::fromStack(L, k); rets.push(L2);
+                    if (interstate_copy(L, k, L2)) {
+                        lua_settop(L, o);
+                        return luaL_error(L2, "IPC: return value contains unsupported argument type.");
+                    }
                 }
                 lua_settop(L, o);
                 return nret;
@@ -409,6 +494,10 @@ static RefCountedObjectPtr<Callback> memory_getIPC(const std::string& name) {
     return iter->second;
 }
 
+void ShadyLua::_insert_map_helper(lua_State* L, const void* pmt, void(*pf)(lua_State*, int, lua_State*)) {
+    ShadyLua::ScriptMap[L]->IPCCopierBuffer[pmt] = pf;
+}
+
 void ShadyLua::LualibMemory(lua_State* L) {
     getGlobalNamespace(L)
         .beginNamespace("memory")
@@ -454,4 +543,7 @@ void ShadyLua::LualibMemory(lua_State* L) {
             .addFunction("delete", reinterpret_cast<void (*const)(size_t)>(SokuLib::DeleteFct))
         .endNamespace()
     ;
+    RegisterIPCUserdata<cpustate, false>(L);
+    RegisterIPCUserdata<Callback>(L);
+    RegisterIPCUserdata<FuncCall>(L);
 }
