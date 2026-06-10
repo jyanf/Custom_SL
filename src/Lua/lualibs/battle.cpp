@@ -926,4 +926,12 @@ void ShadyLua::LualibBattle(lua_State* L) {
             .addFunction("random", battle_random)
         .endNamespace()
     ;
+    RegisterIPCUserdata<SokuLib::RenderInfo, false>(L);
+    RegisterIPCUserdata<ShadyLua::CustomDataProxy, false>(L);
+    RegisterIPCUserdata<SokuLib::v2::GameObjectBase>(L);
+    RegisterIPCUserdata<SokuLib::v2::GameObject>(L);
+    RegisterIPCUserdata<SokuLib::v2::Player>(L);
+    RegisterIPCUserdata<SokuLib::PlayerInfo, false>(L);
+    RegisterIPCUserdata<SokuLib::GameStartParams, false>(L);
+    RegisterIPCUserdata<SokuLib::BattleManager>(L);
 }
