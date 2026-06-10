@@ -118,7 +118,7 @@ static ShadyCore::FileType getTypeAndFormat(const char* filename) {
 		break;
 	case ShadyCore::FileType::TYPE_SFX:
 		ft.format = ft.extValue == ShadyCore::FileType::getExtValue(".cv3")
-			? ShadyCore::FileType::SFX_GAME : ShadyCore::FileType::SFX_GAME;
+			? ShadyCore::FileType::SFX_GAME : ShadyCore::FileType::SFX_WAV;
 		break;
 	case ShadyCore::FileType::TYPE_BGM:
 		ft.format = ShadyCore::FileType::BGM_OGG;
