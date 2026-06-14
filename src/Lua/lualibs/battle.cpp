@@ -758,14 +758,18 @@ static int battle_random(lua_State* L) {
 
 template <typename T> static inline T& castFromPtr(size_t addr) { return *(T*)addr; }
 
+template <int value> static inline int* enumMap() {
+    static const int valueHolder = value; return (int*)&valueHolder;
+}
+
 void ShadyLua::LualibBattle(lua_State* L) {
     using SokuLib::DrawUtils::DxSokuColor;
     getGlobalNamespace(L)
         .beginNamespace("battle")
             .beginClass<SokuLib::DrawUtils::DxSokuColor>("ColorEx")
+                .addStaticFunction("fromPtr", castFromPtr<DxSokuColor>)
                 //.addConstructor<void (*)()>()
                 .addStaticFunction("__call", &battle_colorex_ctor)//simulate factory
-                .addStaticFunction("fromPtr", castFromPtr<DxSokuColor>)
                 .addData<unsigned int>("value", &DxSokuColor::color, true)
                 .addData<unsigned char>("a", &DxSokuColor::a, true)
                 .addData<unsigned char>("r", &DxSokuColor::r, true)
@@ -776,6 +780,10 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addFunction("__tostring", &battle_colorex_tostring)
             .endClass()
             .beginClass<SokuLib::RenderInfo>("RenderInfo")
+                .addStaticProperty("NONE", enumMap<0>(), false)
+		        .addStaticProperty("GRAYSCALE", enumMap<1>(), false)
+                .addStaticProperty("OVERLAY", enumMap<2>(), false)
+                .addStaticProperty("GLOW", enumMap<3>(), false)
                 .addStaticFunction("fromPtr", castFromPtr<SokuLib::RenderInfo>)
                 .addConstructor<void (*)()>()
                 .addData<unsigned int>("color", MEMBER_ADDRESS(unsigned int, SokuLib::RenderInfo, color), true)
