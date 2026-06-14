@@ -430,6 +430,25 @@ static inline void addObjectListener(const HookData& data) {
     }
 }
 
+static inline std::string battle_colorex_tostring(const SokuLib::DrawUtils::DxSokuColor* self) {
+    return std::format("{{ a:{:d}, r:{:d}, g:{:d}, b:{:d} }}", self->a, self->r, self->g, self->b);
+}
+static SokuLib::DrawUtils::DxSokuColor battle_colorex_ctor(lua_State* L) {
+    using SokuLib::DrawUtils::DxSokuColor;
+    const int argc = lua_gettop(L)-1;//rm self
+    if (argc <= 1) {
+        unsigned int color = argc==0 ? 0xFFFFFFFFu : static_cast<unsigned>(luaL_checkinteger(L, 2));
+        return color;
+    } else if (argc <= 4) {
+        unsigned char a = static_cast<unsigned char>(luaL_optinteger(L, 2, 0xFF));
+        unsigned char r = static_cast<unsigned char>(luaL_optinteger(L, 3, 0xFF));
+        unsigned char g = static_cast<unsigned char>(luaL_optinteger(L, 4, 0xFF));
+        unsigned char b = static_cast<unsigned char>(luaL_optinteger(L, 5, 0xFF));
+        return DxSokuColor(r, g, b, a);
+    }
+    return luaL_error(L, "DxSokuColor(): expected 0~4 arguments");
+}
+
 static int battle_replaceCharacter(lua_State* L) {
     unsigned int c = luaL_checkinteger(L, 1);
     HookData data(L);
@@ -740,14 +759,30 @@ static int battle_random(lua_State* L) {
 template <typename T> static inline T& castFromPtr(size_t addr) { return *(T*)addr; }
 
 void ShadyLua::LualibBattle(lua_State* L) {
+    using SokuLib::DrawUtils::DxSokuColor;
     getGlobalNamespace(L)
         .beginNamespace("battle")
+            .beginClass<SokuLib::DrawUtils::DxSokuColor>("ColorEx")
+                //.addConstructor<void (*)()>()
+                .addStaticFunction("__call", &battle_colorex_ctor)//simulate factory
+                .addStaticFunction("fromPtr", castFromPtr<DxSokuColor>)
+                .addData<unsigned int>("value", &DxSokuColor::color, true)
+                .addData<unsigned char>("a", &DxSokuColor::a, true)
+                .addData<unsigned char>("r", &DxSokuColor::r, true)
+                .addData<unsigned char>("g", &DxSokuColor::g, true)
+                .addData<unsigned char>("b", &DxSokuColor::b, true)
+                .addFunction("__add", &DxSokuColor::operator+)
+                .addFunction("__mul", &DxSokuColor::operator*<lua_Number>)
+                .addFunction("__tostring", &battle_colorex_tostring)
+            .endClass()
             .beginClass<SokuLib::RenderInfo>("RenderInfo")
                 .addStaticFunction("fromPtr", castFromPtr<SokuLib::RenderInfo>)
                 .addConstructor<void (*)()>()
-                .addData<unsigned int>("color", &SokuLib::RenderInfo::color, true)
+                .addData<unsigned int>("color", MEMBER_ADDRESS(unsigned int, SokuLib::RenderInfo, color), true)
+                .addProperty("colorEx", MEMBER_ADDRESS(DxSokuColor, SokuLib::RenderInfo, color), true)
                 .addData<int>("shaderType", &SokuLib::RenderInfo::shaderType, true)
-                .addData<unsigned int>("shaderColor", &SokuLib::RenderInfo::shaderColor, true)
+                .addData<unsigned int>("shaderColor", MEMBER_ADDRESS(unsigned int, SokuLib::RenderInfo, shaderColor), true)
+                .addProperty("shaderColorEx", MEMBER_ADDRESS(DxSokuColor, SokuLib::RenderInfo, shaderColor), true)
                 .addProperty("scale", &SokuLib::RenderInfo::scale, true)
                 .addData("xRotation", &SokuLib::RenderInfo::xRotation, true)
                 .addData("yRotation", &SokuLib::RenderInfo::yRotation, true)
