@@ -65,23 +65,6 @@ int gui_design_setsp(lua_State* L) {
     return 0;
 }
 
-static int gui_design_getRotation(lua_State* L) {
-	auto object = Stack<SokuLib::CDesign::Object*>::get(L, 1);
-    if (object && *(int*)object == SokuLib::ADDR_VTBL_CDESIGN_SPRITE) {
-        lua_pushnumber(L, reinterpret_cast<SokuLib::CDesign::Sprite*>(object)->sprite.rotation);
-        return 1;
-    }
-    return 0;
-}
-static int gui_design_setRotation(lua_State* L) {
-    auto object = Stack<SokuLib::CDesign::Object*>::get(L, 1);
-	auto rotation = luaL_checknumber(L, 2);
-    if (object && *(int*)object == SokuLib::ADDR_VTBL_CDESIGN_SPRITE) {
-        reinterpret_cast<SokuLib::CDesign::Sprite*>(object)->sprite.rotation = rotation;
-    }
-    return 0;
-}
-
 static int gui_OpenMenu(lua_State* L) {
     auto processHandler = lua_gettop(L) >= 1 && lua_isfunction(L, 1) ? luaL_ref(L, LUA_REGISTRYINDEX) : LUA_REFNIL;
     auto menu = new ShadyLua::MenuProxy(processHandler, L);
