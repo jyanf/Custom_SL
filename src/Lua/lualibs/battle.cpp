@@ -987,6 +987,7 @@ void ShadyLua::LualibBattle(lua_State* L) {
         .endNamespace()
     ;
     RegisterIPCUserdata<SokuLib::RenderInfo, false>(L);
+    RegisterIPCUserdata<SokuLib::DrawUtils::DxSokuColor, false>(L);
     RegisterIPCUserdata<ShadyLua::CustomDataProxy, false>(L);
     RegisterIPCUserdata<SokuLib::v2::GameObjectBase>(L);
     RegisterIPCUserdata<SokuLib::v2::GameObject>(L);
