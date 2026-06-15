@@ -15,6 +15,8 @@ namespace {
     };
 }
 
+#define MEMBER_ADDRESS(u,s,m) SokuLib::union_cast<u s::*>(&reinterpret_cast<char const volatile&>(((s*)0)->m))
+
 static ValueProxy* gui_design_getValue(SokuLib::CDesign::Object* object) {
     auto value = new ValueProxy(); // <-- this have memory leak, but it's hard to prevent this
     if (*(int*)object == SokuLib::ADDR_VTBL_CDESIGN_GAUGE) {
@@ -23,6 +25,61 @@ static ValueProxy* gui_design_getValue(SokuLib::CDesign::Object* object) {
         reinterpret_cast<SokuLib::CDesign::Number*>(object)->number.set(&value->number);
     }
     return value;
+}
+
+template<auto ofs, typename Cast = void>
+int gui_design_getsp(lua_State* L) {
+    auto object = Stack<SokuLib::CDesign::Object*>::get(L, 1);
+    if (!object || *(int*)object != SokuLib::ADDR_VTBL_CDESIGN_SPRITE)
+        return 0;
+
+    auto& prop = reinterpret_cast<SokuLib::CDesign::Sprite*>(object)->sprite.*ofs;
+
+    using T = std::remove_reference_t<decltype(prop)>;
+    if constexpr (std::is_void_v<Cast>) {
+        Stack<T>::push(L, prop);
+    } else if constexpr (std::is_pointer_v<Cast>) {
+        using C = std::remove_pointer_t<Cast>;
+        Stack<Cast>::push(L, reinterpret_cast<Cast>(&prop));
+    } else {
+        Stack<Cast>::push(L, *reinterpret_cast<Cast>(&prop));
+    }
+    return 1;
+}
+template<auto ofs, typename Cast = void>
+int gui_design_setsp(lua_State* L) {
+    auto object = Stack<SokuLib::CDesign::Object*>::get(L, 1);
+    if (!object || *(int*)object != SokuLib::ADDR_VTBL_CDESIGN_SPRITE)
+        return 0;
+
+    auto& prop = reinterpret_cast<SokuLib::CDesign::Sprite*>(object)->sprite.*ofs;
+
+    using T = std::remove_reference_t<decltype(prop)>;
+
+    if constexpr (std::is_void_v<Cast>) {
+        prop = Stack<T>::get(L, 2);
+    } else {
+        *reinterpret_cast<Cast*>(&prop) = Stack<Cast>::get(L, 2);
+    }
+
+    return 0;
+}
+
+static int gui_design_getRotation(lua_State* L) {
+	auto object = Stack<SokuLib::CDesign::Object*>::get(L, 1);
+    if (object && *(int*)object == SokuLib::ADDR_VTBL_CDESIGN_SPRITE) {
+        lua_pushnumber(L, reinterpret_cast<SokuLib::CDesign::Sprite*>(object)->sprite.rotation);
+        return 1;
+    }
+    return 0;
+}
+static int gui_design_setRotation(lua_State* L) {
+    auto object = Stack<SokuLib::CDesign::Object*>::get(L, 1);
+	auto rotation = luaL_checknumber(L, 2);
+    if (object && *(int*)object == SokuLib::ADDR_VTBL_CDESIGN_SPRITE) {
+        reinterpret_cast<SokuLib::CDesign::Sprite*>(object)->sprite.rotation = rotation;
+    }
+    return 0;
 }
 
 static int gui_OpenMenu(lua_State* L) {
@@ -491,8 +548,14 @@ void ShadyLua::LualibGui(lua_State* L) {
             .endClass()
             .beginClass<SokuLib::CDesign::Object>("DesignObject")
                 .addStaticFunction("fromPtr", castFromPtr<SokuLib::CDesign::Object>)
-                .addData("x", &SokuLib::CDesign::Object::x2, true)
-                .addData("y", &SokuLib::CDesign::Object::y2, true)
+                .addData("offset", MEMBER_ADDRESS(SokuLib::Vector2f, SokuLib::CDesign::Object, x1))
+                .addData("position", MEMBER_ADDRESS(SokuLib::Vector2f, SokuLib::CDesign::Object, x2))
+                    .addData("x", &SokuLib::CDesign::Object::x2, true)
+                    .addData("y", &SokuLib::CDesign::Object::y2, true)
+                .addProperty("anchor", gui_design_getsp<&SokuLib::Sprite::pos, SokuLib::Vector2f*>, gui_design_setsp<&SokuLib::Sprite::pos>)
+                .addProperty("scale", gui_design_getsp<&SokuLib::Sprite::scale, SokuLib::Vector2f*>, gui_design_setsp<&SokuLib::Sprite::scale>)
+                .addProperty("rotation", gui_design_getsp<&SokuLib::Sprite::rotation>, gui_design_setsp<&SokuLib::Sprite::rotation>)
+                .addProperty("size", gui_design_getsp<&SokuLib::Sprite::size, SokuLib::Vector2f*>, gui_design_setsp<&SokuLib::Sprite::size>)
                 .addData("isActive", &SokuLib::CDesign::Object::active, true)
                 .addFunction("setColor", &SokuLib::CDesign::Object::setColor)
                 .addFunction("getValueControl", gui_design_getValue)
