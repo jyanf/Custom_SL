@@ -280,29 +280,66 @@ static int soku_CharacterName(lua_State* L) {
 }
 
 namespace {
-    static auto argFadeOut = reinterpret_cast<int* const>(0x0043FF4A);
-    static auto argFadeIn = reinterpret_cast<int* const>(0x0043FFFD);
+	static auto& currentBGMPath = *reinterpret_cast<SokuLib::String*>(0x898220);
+    static auto& currentBGMHandle = *reinterpret_cast<DWORD*>(0x899d5C);
+    class BGMManager {
+    public://really a mess, don't look at it
+        void setFadeOut(DWORD handle, int fade) {
+            return reinterpret_cast<void(__thiscall*)(BGMManager*, DWORD, int, int, bool)>(0x403c20)(this, handle, fade, 0, true);
+		}
+        void setPreVolume(DWORD handle) {
+            return reinterpret_cast<void(__thiscall*)(BGMManager*, DWORD, int, int, float)>(0x403c70)(this, handle, 0, 0, 0.9f);
+        }
+        void setDelayedIn(DWORD handle, int delay) {
+            return reinterpret_cast<void(__thiscall*)(BGMManager*, DWORD, int)>(0x403b20)(this, handle, delay);
+        }
+        DWORD getHandle() {
+			DWORD ret = 0;
+            reinterpret_cast<DWORD*(__thiscall*)(BGMManager*, DWORD*)>(0x4039a0)(this, &ret);
+            return ret;
+        }
+        bool syncRelated(DWORD handle, char* path) {
+            return reinterpret_cast<bool(__thiscall*)(BGMManager*, DWORD, char*, bool, float)>(0x4039c0)(this, handle, path, true, 1.0f);
+		}
+    };
+    static auto& bgmManager = *reinterpret_cast<BGMManager*>(0x89fe50);
+    static auto CRC32_hash = reinterpret_cast<DWORD(__cdecl*)(const char*, int)>(0x409b50);
+    int mSet_find(DWORD hash) {
+        const auto pset = reinterpret_cast<const void*>(0x8998c0);//something like Map<int, void>, a set?
+        struct Ret{
+            void* map;
+            void* node;
+        } result{0};
+        reinterpret_cast<void* (__thiscall*)(const void*, Ret*, DWORD*)>(0x42f780)(pset, &result, &hash);
+        return (result.map && result.map == pset) + ((DWORD)result.node != *((DWORD*)pset + 1));//ret.node!=set.head
+    }
 }
 static int soku_PlayBGM(lua_State* L) {
     const char* path = luaL_optstring(L, 1, 0);
     int fadeOut= max(luaL_optinteger(L, 2, 1000), 0);
-    int fadeIn = max(luaL_optinteger(L, 3, 500), 0);
+    int delayIn = max(luaL_optinteger(L, 3, 500), 0);
     if (!path) {
         reinterpret_cast<void(__cdecl*)(int, int)>(0x0043e180)(fadeOut, 0);
         return 0;
     }
-    DWORD old1, old2;
-    VirtualProtect(reinterpret_cast<LPVOID>(argFadeOut), 4, PAGE_EXECUTE_READWRITE, &old1);//TODO: thread unsafe, might need to reimplement playBGM
-    VirtualProtect(reinterpret_cast<LPVOID>(argFadeIn), 4, PAGE_EXECUTE_READWRITE, &old2);
-    int orgOut = *argFadeOut;
-    *argFadeOut = fadeOut;
-    int orgIn = *argFadeIn;
-    *argFadeIn = fadeIn;
-    SokuLib::playBGM(path);
-    *argFadeOut = orgOut;
-    *argFadeIn = orgIn;
-    VirtualProtect(reinterpret_cast<LPVOID>(argFadeOut), 4, old1, &old1);
-    VirtualProtect(reinterpret_cast<LPVOID>(argFadeIn), 4, old2, &old2);
+	currentBGMPath = path;
+    if (currentBGMHandle) {
+		bgmManager.setFadeOut(currentBGMHandle, fadeOut);
+    }
+	auto newHandle = bgmManager.getHandle();
+    if (!newHandle) {
+        return 0;
+    }
+	currentBGMHandle = newHandle;
+    bgmManager.syncRelated(newHandle, const_cast<char*>(path));//should not change str...
+	int n = mSet_find(CRC32_hash(path, strlen(path)));
+    if (n>0) {
+        if (n>1) {
+			bgmManager.setPreVolume(currentBGMHandle);//unknown usage
+        }
+        bgmManager.setDelayedIn(currentBGMHandle, delayIn);
+        //SaveDataManager_EnableBGM(&gSaveDataManager,path);
+    }
     return 0;
 }
 
