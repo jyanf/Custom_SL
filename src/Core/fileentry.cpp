@@ -49,20 +49,35 @@ void ShadyCore::FilePackageEntry::close(std::istream& stream) {
 }
 
 //-------------------------------------------------------------
+namespace {
+	static bool check_path_exclude(const std::filesystem::path& rel) {// exclude .DS_Store, README.md, .git, etc.
+		for (auto& part : rel) {
+			auto s = part.string();
+			if (!s.empty() && s[0] == '.') return true;
+		}
+		return false;
+	}
+}
 
 void ShadyCore::Package::loadDir(const std::filesystem::path& path, const std::filesystem::path& root) {
-	for (std::filesystem::recursive_directory_iterator iter(path), end; iter != end; ++iter) {
-		if (std::filesystem::is_regular_file(iter->path())) {
+    for (std::filesystem::recursive_directory_iterator iter(path), end; iter != end; ++iter) {
+        const auto p = iter->path();
+        if (check_path_exclude(p.lexically_relative(path))) {
+            if (std::filesystem::is_directory(p)) iter.disable_recursion_pending();
+            continue;
+        }
+
+        if (std::filesystem::is_regular_file(p)) {
 #ifdef _WIN32
-			std::string resName = ws2sjis(std::filesystem::relative(iter->path(), root).lexically_normal().wstring());
+            std::string resName = ws2sjis(std::filesystem::relative(p, root).lexically_normal().wstring());
 #else
-			std::string resName = utf2sjis(std::filesystem::relative(iter->path(), root).lexically_normal().string());
+            std::string resName = utf2sjis(std::filesystem::relative(p, root).lexically_normal().string());
 #endif
-			underlineToSlash(resName);
-			std::filesystem::path filename = std::filesystem::relative(iter->path(), path).lexically_normal();
-			this->insert(resName, new FilePackageEntry(this, filename));
-		}
-	}
+            underlineToSlash(resName);
+            std::filesystem::path filename = std::filesystem::relative(p, path).lexically_normal();
+            this->insert(resName, new FilePackageEntry(this, filename));
+        }
+    }
 }
 
 namespace {
