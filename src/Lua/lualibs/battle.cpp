@@ -489,7 +489,7 @@ static int battle_replaceCharacter(lua_State* L) {
         case SokuLib::CHARACTER_NAMAZU:     addObjectListener<SokuLib::v2::PlayerNamazu>(data); break;
         default: luaL_error(L, "Character not found: %d", c);
     }
-    if (lua_getglobal(L, "CloseDesyncAlert") != LUA_TBOOLEAN or !lua_toboolean(L, -1))
+    if (lua_getglobal(L, "CloseDesyncAlert") != LUA_TBOOLEAN || !lua_toboolean(L, -1))
         Logger::Warning("ALERT: a mod that can cause desync was loaded!");
     lua_pop(L, 1);
     return 0;
@@ -647,6 +647,16 @@ static std::string battle_GameObject_getCustomData(SokuLib::v2::GameObject* obje
     int size = luaL_checkinteger(L, 2);
     return std::string((const char*)object->customData, size);
 }
+static bool battle_GameObject_checkTurnIntoCrystals(SokuLib::v2::GameObject* object, lua_State* L) {
+    return object->checkTurnIntoCrystals(
+        lua_toboolean(L, 2),
+        luaL_checkinteger(L, 3),
+        luaL_checkinteger(L, 4),
+        static_cast<float>(luaL_optnumber(L, 5, 0.0)),
+        static_cast<float>(luaL_optnumber(L, 6, 0.0))
+    );
+}
+
 static ShadyLua::CustomDataProxy battle_CustomData_fromPtr(int addr) {
     return ShadyLua::CustomDataProxy((void*)addr);
 }
@@ -862,7 +872,7 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addFunction("getCustomData", battle_GameObject_getCustomData)
                 .addFunction("checkGrazed", &SokuLib::v2::GameObject::checkGrazed)
                 .addFunction("checkProjectileHit", &SokuLib::v2::GameObject::checkProjectileHit)
-                .addFunction("checkTurnIntoCrystals", &SokuLib::v2::GameObject::checkTurnIntoCrystals)
+                .addFunction("checkTurnIntoCrystals", battle_GameObject_checkTurnIntoCrystals)
 
                 .addFunction("createObject", battle_createObject<SokuLib::v2::GameObject, &SokuLib::v2::GameObject::createObject>)
                 .addFunction("createChild", battle_createObject<SokuLib::v2::GameObject, &SokuLib::v2::GameObject::createChild>)
