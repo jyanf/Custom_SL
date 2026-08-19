@@ -173,6 +173,12 @@ static int gui_renderer_getEffects(lua_State* L) {
     return 1;
 }
 
+static int gui_Effect_getPtr(lua_State* L) {
+    auto o = Stack<ShadyLua::Renderer::Effect*>::get(L, 1);
+    lua_pushinteger(L, (int)o);
+    return 1;
+}
+
 static SokuLib::CDesign::Object* gui_design_GetItemById(SokuLib::CDesign* schema, int id) {
     SokuLib::CDesign::Object* object = 0; schema->getById(&object, id);
     return object;
@@ -674,16 +680,28 @@ void ShadyLua::LualibGui(lua_State* L) {
                 .addFunction("clearEffects", &ShadyLua::EffectManagerProxy::ClearEffects)
             .endClass()
             .beginClass<ShadyLua::Renderer::Effect>("Effect")
-                .addData("isEnabled", &ShadyLua::Renderer::Effect::isActive, true)
-                .addData("isAlive", &ShadyLua::Renderer::Effect::unknown158, true)
+                .addProperty("ptr", gui_Effect_getPtr, 0)
                 .addData("position", &ShadyLua::Renderer::Effect::position, true)
                 .addData("speed", &ShadyLua::Renderer::Effect::speed, true)
                 .addData("gravity", &ShadyLua::Renderer::Effect::gravity, true)
                 .addData("center", &ShadyLua::Renderer::Effect::center, true)
+                .addProperty("direction", BYTE_FIELD_GETTER(ShadyLua::Renderer::Effect, direction), BYTE_FIELD_SETTER_CASTED(SokuLib::Direction, ShadyLua::Renderer::Effect, direction))
+                .addData("lifetime", &ShadyLua::Renderer::Effect::unknown158, true)
+                    .addData("isAlive", &ShadyLua::Renderer::Effect::unknown158, true)
+                .addProperty("layer", BYTE_FIELD_GETTER(ShadyLua::Renderer::Effect, layer), BYTE_FIELD_SETTER(ShadyLua::Renderer::Effect, layer))
+                // frameState
+                .addProperty("actionId", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.actionId), false)
+                .addProperty("sequenceId", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.sequenceId), false)
+                .addProperty("poseId", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.poseId), false)
+                .addProperty("poseFrame", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.poseFrame), false)
+                .addProperty("currentFrame", MEMBER_ADDRESS(unsigned int, ShadyLua::Renderer::Effect, frameState.currentFrame), false)
+                .addProperty("sequenceSize", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.sequenceSize), false)
+                .addProperty("poseDuration", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.poseDuration), false)
                 // TODO render options
                 .addFunction("setActionSequence", &ShadyLua::Renderer::Effect::setActionSequence)
                 .addFunction("setAction", &ShadyLua::Renderer::Effect::setAction)
                 .addFunction("setSequence", &ShadyLua::Renderer::Effect::setSequence)
+                .addFunction("advanceFrame", &ShadyLua::Renderer::Effect::advanceFrame)
                 .addFunction("resetSequence", &ShadyLua::Renderer::Effect::resetSequence)
                 .addFunction("prevSequence", &ShadyLua::Renderer::Effect::prevSequence)
                 .addFunction("nextSequence", &ShadyLua::Renderer::Effect::nextSequence)

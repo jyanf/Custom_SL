@@ -561,22 +561,6 @@ static int battle_GameObjectBase_getOpponent(lua_State* L) {
     return 1;
 }
 
-template<typename Class, auto Field>
-static int battle_getByteField(lua_State* L) {
-    auto o = Stack<Class*>::get(L, 1);
-    lua_pushinteger(L, o->*Field);
-    return 1;
-}
-template<typename Class, auto Field, typename Cast = char>
-static int battle_setByteField(lua_State* L) {
-    auto o = Stack<Class*>::get(L, 1);
-    o->*Field = (Cast)luaL_checkinteger(L, 2);
-    return 0;
-}
-#define BYTE_FIELD_GETTER(t, f) battle_getByteField<t, &t::f>
-#define BYTE_FIELD_SETTER_CASTED(c, t, f) battle_setByteField<t, &t::f, c>
-#define BYTE_FIELD_SETTER(t, f) battle_setByteField<t, &t::f>
-
 static int battle_GameObjectBase_getShadowOn(lua_State* L) {
     auto o = Stack<SokuLib::v2::GameObjectBase*>::get(L, 1);
     lua_pushboolean(L, o->isActive);
