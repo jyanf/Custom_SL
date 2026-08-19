@@ -118,6 +118,7 @@ namespace ShadyLua {
         inline void prepare() { if (!handle) { handle = new SokuLib::SWRFont(); handle->create(); }  handle->setIndirect(*this); }
     };
 
+    //helpers below
     class CustomDataProxy {//for battle.Object.customData
         void* addr = addr;
     public:
@@ -135,6 +136,22 @@ namespace ShadyLua {
 
     template <typename TT, size_t N, typename T> static ShadyLua::ArrayRef<T, N, TT>* ArrayRef_castFrom(T(*ptr)[N]) { return (ShadyLua::ArrayRef<T, N, TT>*)(ptr); }
     template <typename TT, size_t N, typename T, class C> static ShadyLua::ArrayRef<T, N, TT> C::* ArrayRef_castFrom(T(C::* ptr)[N]) { return (ShadyLua::ArrayRef<T, N, TT> C::*)(ptr); }
+
+    template<typename Class, auto Field>
+    static int getByteField(lua_State* L) {
+        auto o = luabridge::Stack<Class*>::get(L, 1);
+        lua_pushinteger(L, o->*Field);
+        return 1;
+    }
+    template<typename Class, auto Field, typename Cast = char>
+    static int setByteField(lua_State* L) {
+        auto o = luabridge::Stack<Class*>::get(L, 1);
+        o->*Field = (Cast)luaL_checkinteger(L, 2);
+        return 0;
+    }
+    #define BYTE_FIELD_GETTER(t, f) getByteField<t, &t::f>
+    #define BYTE_FIELD_SETTER_CASTED(c, t, f) setByteField<t, &t::f, c>
+    #define BYTE_FIELD_SETTER(t, f) setByteField<t, &t::f>
 }
 
 namespace luabridge {
