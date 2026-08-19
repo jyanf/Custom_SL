@@ -12,19 +12,94 @@ namespace {
 
     struct ValueProxy {
         union { float number; int gauge; };
+        virtual void getValue1() = 0;
+        virtual float getValue2() = 0;
+		virtual int type_id() = 0;//simulate RTTI, 1 for number, 2 for gauge
+    };
+	struct ValueProxyNumber : public ValueProxy {//char*, int*, float* -> float
+        virtual void getValue1() override {//int getInt()
+            //return static_cast<int>(number);
+            int result = static_cast<int>(number);
+            __asm {
+                mov eax, result
+            }
+        }
+        virtual float getValue2() override { return number; }//float getFloat()
+        virtual int type_id() override { return 1; }
+        ValueProxyNumber() {
+            number = 0;
+        }
+    };
+    struct ValueProxyGauge : public ValueProxy { //int*, short* -> int
+        float offset, length;
+        virtual void getValue1() override {//float getValue()
+            // return (gauge - offset) / length;
+            __asm {
+                ;//ECX = this
+                fild    dword ptr[ecx + 4]  ;// ST(0) = (float)gauge
+                fsub    dword ptr[ecx + 8]  ;// ST(0) -= offset
+                fdiv    dword ptr[ecx + 12] ;// ST(0) /= length
+                ;//ret float value on ST(0)
+            }
+        }
+		virtual float getValue2() override { return 0; }
+        virtual int type_id() override { return 2; }
+        ValueProxyGauge(float offset, float length) : offset(offset), length(length) {
+            gauge = offset;
+		}
     };
 }
 
 #define MEMBER_ADDRESS(u,s,m) SokuLib::union_cast<u s::*>(&reinterpret_cast<char const volatile&>(((s*)0)->m))
 
-static ValueProxy* gui_design_getValue(SokuLib::CDesign::Object* object) {
-    auto value = new ValueProxy(); // <-- this have memory leak, but it's hard to prevent this
+static ValueProxy* gui_design_getValue(SokuLib::CDesign::Object* object, lua_State* L) {
+    using Gauge = SokuLib::CGauge;
+    using Number = SokuLib::CNumber;
     if (*(int*)object == SokuLib::ADDR_VTBL_CDESIGN_GAUGE) {
-        reinterpret_cast<SokuLib::CDesign::Gauge*>(object)->gauge.set(&value->gauge, 0, 100);
+        auto value = SokuLib::NewFct(sizeof(ValueProxyGauge));
+        new (value) ValueProxyGauge{ 
+            static_cast<float>(luaL_optnumber(L, 2, 0.0)), 
+            static_cast<float>(luaL_optnumber(L, 3, 100.0))
+        };
+        reinterpret_cast<SokuLib::CDesign::Gauge*>(object)->gauge.set((Gauge::IValue*)value);
+        return (ValueProxy*)value;
     } else if (*(int*)object == SokuLib::ADDR_VTBL_CDESIGN_NUMBER) {
-        reinterpret_cast<SokuLib::CDesign::Number*>(object)->number.set(&value->number);
+		auto value = SokuLib::NewFct(sizeof(ValueProxyNumber));
+        new (value) ValueProxyNumber{};
+        reinterpret_cast<SokuLib::CDesign::Number*>(object)->number.set((Number::IValue*)value);
+		return (ValueProxy*)value;
     }
-    return value;
+    return nullptr;
+}
+template<auto member, int id>
+int gui_design_getvp(lua_State* L) {
+    auto proxy = Stack<ValueProxy*>::get(L, 1);
+    if (!proxy || proxy->type_id() != id) return 0;
+    if constexpr (id==1) {//number proxy
+        auto* nproxy = static_cast<ValueProxyNumber*>(proxy);
+        Stack<decltype(nproxy->*member)>::push(L, nproxy->*member);
+    } else if constexpr (id==2) {//gauge proxy
+        auto* gproxy = static_cast<ValueProxyGauge*>(proxy);
+        Stack<decltype(gproxy->*member)>::push(L, gproxy->*member);
+    }
+    return 1;
+}
+
+template<auto member, int id>
+int gui_design_setvp(lua_State* L) {
+    auto proxy = Stack<ValueProxy*>::get(L, 1);
+    if (!proxy || proxy->type_id() != id) return 0;
+    if constexpr (id == 1) {
+        auto* nproxy = static_cast<ValueProxyNumber*>(proxy);
+        using T = decltype(nproxy->*member);
+        nproxy->*member = Stack<T>::get(L, 2);
+    }
+    else if constexpr (id == 2) {
+        auto* gproxy = static_cast<ValueProxyGauge*>(proxy);
+        using T = decltype(gproxy->*member);
+        gproxy->*member = Stack<T>::get(L, 2);
+    }
+    return 0;
 }
 
 template<auto ofs, typename Cast = void>
@@ -394,6 +469,11 @@ bool ShadyLua::Renderer::RemoveShow() {
     return true;
 }
 
+ShadyLua::Renderer::~Renderer() {
+    guiSchema.clear();
+    RemoveShow();
+}
+
 static int font_loadFontFile(lua_State* L) {
     auto readFile = luabridge::getGlobal(L, "readfile");
     const char* filepath = luaL_checkstring(L, 1);
@@ -544,8 +624,10 @@ void ShadyLua::LualibGui(lua_State* L) {
                 .addFunction("getValueControl", gui_design_getValue)
             .endClass()
             .beginClass<ValueProxy>("DesignValue")
-                .addData("gauge", &ValueProxy::gauge, true)
-                .addData("number", &ValueProxy::number, true)
+                .addProperty("number", gui_design_getvp<&ValueProxyNumber::number, 1>, gui_design_setvp<&ValueProxyNumber::number, 1>)
+                .addProperty("gauge", gui_design_getvp<&ValueProxyGauge::gauge, 2>, gui_design_setvp<&ValueProxyGauge::gauge, 2>)
+                .addProperty("gaugeOffset", gui_design_getvp<&ValueProxyGauge::offset, 2>, gui_design_setvp<&ValueProxyGauge::offset, 2>)
+                .addProperty("gaugeLength", gui_design_getvp<&ValueProxyGauge::length, 2>, gui_design_setvp<&ValueProxyGauge::length, 2>)
             .endClass()
             .beginClass<SokuLib::KeyInputLight>("KeyInputLight")
                 .addStaticFunction("fromPtr", castFromPtr<SokuLib::KeyInputLight>)
