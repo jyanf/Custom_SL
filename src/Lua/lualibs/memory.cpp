@@ -347,6 +347,7 @@ namespace {
 }
 
 void ShadyLua::RemoveMemoryEvents(LuaScript* script) {
+    // TODO listeners lock
     for (auto hook : hookedAddr) {
         for (auto iter = hook.second->callbacks.begin(); iter != hook.second->callbacks.end();) {
             if (iter->getObject()->L == script->L) iter = hook.second->callbacks.erase(iter);

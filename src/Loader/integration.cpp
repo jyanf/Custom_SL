@@ -164,10 +164,10 @@ static void LualibLoader(lua_State* L) {
 	p["searchers"].append(&_searcher_Lua);
 }
 
-void EnablePackage(ModPackage* p) {
-    if (!std::filesystem::is_directory(p->path) && !std::filesystem::is_regular_file(p->path)) return;
+bool EnablePackage(ModPackage* p) {
+    if (!std::filesystem::is_directory(p->path) && !std::filesystem::is_regular_file(p->path)) return false;
     p->package = ModPackage::basePackage->merge(p->path);
-    if (!iniEnableLua) return;
+    if (!iniEnableLua) return true;
 
     { std::shared_lock l0(*ModPackage::basePackage, std::defer_lock);
     std::shared_lock l1(*p->package, std::defer_lock);
@@ -185,14 +185,30 @@ void EnablePackage(ModPackage* p) {
         if (((ShadyLua::LuaScript*)p->script)->load("init.lua") != LUA_OK || !((ShadyLua::LuaScript*)p->script)->run()) {
             delete ((ShadyLua::LuaScript*)p->script);
             p->script = 0;
+			//return false;
         }
     }
+	return true;
 }
 
-void DisablePackage(ModPackage* p) {
-    if (p->script) delete (ShadyLua::LuaScript*)p->script;
+bool DisablePackage(ModPackage* p) {
+	auto pscript = reinterpret_cast<ShadyLua::LuaScript*>(p->script);
+	if (pscript) {
+		if (pscript->mutex.try_outer_lock()) {
+			delete pscript;
+		} else {
+			return false;
+		}
+	}
     if (p->package) ModPackage::basePackage->erase(p->package);
     p->script = p->package = 0;
+	return true;
+}
+
+bool ReloadPackage(ModPackage* p) {
+	if (!DisablePackage(p)) return false;
+	if (!EnablePackage(p)) return false;
+	return true;
 }
 
 extern "C" __declspec(dllexport) const char** getModsList() {
