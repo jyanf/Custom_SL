@@ -15,7 +15,33 @@ namespace ShadyLua {
         using fnDestroy_t = void (*)(void* userdata);
 
         lua_State* const L;
-        std::recursive_mutex mutex;
+        class : public std::recursive_mutex {
+            using Base = std::recursive_mutex;
+            volatile unsigned int _depth{ 0 };
+        public:
+            void lock() {
+                Base::lock();
+                ++_depth;
+            }
+            void unlock() {
+                Base::unlock();
+                --_depth;
+            }
+            bool try_lock() {
+                if (!Base::try_lock())
+                    return false;
+                ++_depth;
+                return true;
+            }
+            bool try_outer_lock() {
+                if (!try_lock()) return false;
+                if (_depth == 1) {
+                    return true;
+                }
+                unlock();
+                return false;
+            }
+        } mutex;
         void* const userdata;
         std::unordered_map<const void*, void(*)(lua_State*, int, lua_State*)> IPCCopierBuffer;
     protected:

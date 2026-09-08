@@ -58,5 +58,6 @@ public:
     void merge(const nlohmann::json::value_type& remote);
 };
 
-void EnablePackage(ModPackage* package);
-void DisablePackage(ModPackage* package);
+bool EnablePackage(ModPackage* package);
+bool DisablePackage(ModPackage* package);
+bool ReloadPackage(ModPackage* package);
