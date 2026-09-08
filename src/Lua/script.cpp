@@ -51,8 +51,8 @@ ShadyLua::LuaScript::~LuaScript() {
     if (lua_getglobal(L, "AtExit") == LUA_TFUNCTION) {
         if (lua_pcall(L, 0, 0, 0)) Logger::Error(lua_tostring(L, -1));
     }
-    RemoveEvents(this);
-    ScriptMap.erase(L);
+    RemoveEvents(this);//might affect listener
+    ScriptMap.erase(L);//need lock?
     if (fnDestroy) fnDestroy(userdata);
     lua_close(L);
 }

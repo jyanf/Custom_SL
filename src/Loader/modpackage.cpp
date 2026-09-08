@@ -355,23 +355,28 @@ void ModPackage::CheckUpdates() {
 		for (auto p : ModPackage::descPackage) {
 			if (p->watcher == current) { package = p; break; }
 		} }
-
+		bool result = true;
 		if (package) {
 			std::lock_guard lock(ShadyUtil::FileWatcher::delegateMutex);
-		switch (current->action) {
-		case ShadyUtil::FileWatcher::CREATED:
-			EnablePackage(package);
-			break;
-		case ShadyUtil::FileWatcher::REMOVED:
-			DisablePackage(package);
-			break;
-		case ShadyUtil::FileWatcher::RENAMED:
-			package->path.replace_filename(current->filename);
-			break;
-		case ShadyUtil::FileWatcher::MODIFIED:
-			DisablePackage(package);
-			EnablePackage(package);
-			break;
-		}}
+			switch (current->action) {
+			case ShadyUtil::FileWatcher::CREATED:
+				result &= EnablePackage(package);
+				break;
+			case ShadyUtil::FileWatcher::REMOVED:
+				result &= DisablePackage(package);
+				break;
+			case ShadyUtil::FileWatcher::RENAMED:
+				package->path.replace_filename(current->filename);
+				break;
+			case ShadyUtil::FileWatcher::MODIFIED:
+				result &= ReloadPackage(package);
+				break;
+			}
+		}
+		if (!result) {
+			ShadyUtil::FileWatcher::Unget(current, current->action);
+			return;
+		}
+		//pop
 	}
 }
