@@ -456,6 +456,19 @@ void ModMenu::updateView(int index) {
 		package->downloadPreview();
 		viewPreview.dxHandle = 0;
 	}
+	//prefetch images
+	size_t radius = max(index, ModPackage::descPackage.size()-1-index);
+	radius = min(radius, PREVIEW_PREFETCH_RADIUS);
+	for (int di = 1; di <= radius; ++di) {
+		if (index + di < ModPackage::descPackage.size()) {
+			auto package = ModPackage::descPackage[index + di];
+			if (package->previewName.empty()) package->downloadPreview();
+		}
+		if (index - di >= 0) {
+			auto package = ModPackage::descPackage[index - di];
+			if (package->previewName.empty()) package->downloadPreview();
+		}
+	}
 }
 
 void ModMenu::swap(int i, int j) {
