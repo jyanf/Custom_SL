@@ -295,7 +295,7 @@ static bool __fastcall schemaCreateReader(void** output, int unused, const char*
                 // TODO schema loading is still too complex
                 std::istream& input = iter.open();
                 std::stringstream* buffer = new std::stringstream(std::ios::in|std::ios::out|std::ios::binary);
-                ShadyCore::convertResource(type.type, type.format, input, targetFormat, *buffer);
+                ShadyCore::convertResource(type.type, type.format, input, targetFormat, *buffer);//still triggers problem if removed but failed to refresh package
                 iter.close(input);
 
                 reader[0] = ShadyCore::stream_reader_vtbl;
