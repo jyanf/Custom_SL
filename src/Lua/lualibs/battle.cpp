@@ -573,6 +573,23 @@ static int battle_GameObjectBase_setShadowOn(lua_State* L) {
         o->shadowOffset = -6;
     return 0;
 }
+static int battle_GameObjectBase_getActionLock(lua_State* L) {
+    auto o = Stack<SokuLib::v2::GameObjectBase*>::get(L, 1);
+    if (o->gameData.sequenceData) {
+        lua_pushinteger(L, o->gameData.sequenceData->actionLock);
+        return 1;
+    }
+    return 0;
+}
+static int battle_GameObjectBase_getMoveLock(lua_State* L) {
+    auto o = Stack<SokuLib::v2::GameObjectBase*>::get(L, 1);
+    if (o->gameData.sequenceData) {
+        lua_pushinteger(L, o->gameData.sequenceData->moveLock);
+        return 1;
+    }
+    return 0;
+}
+
 
 static ShadyLua::Renderer::Effect* battle_GameObjectBase_createEffect(SokuLib::v2::GameObjectBase* object, lua_State* L) {
     auto fxmanager = *reinterpret_cast<SokuLib::v2::EffectManager_Effect**>(0x8985f0);
@@ -631,6 +648,7 @@ static std::string battle_GameObject_getCustomData(SokuLib::v2::GameObject* obje
     int size = luaL_checkinteger(L, 2);
     return std::string((const char*)object->customData, size);
 }
+
 static bool battle_GameObject_checkTurnIntoCrystals(SokuLib::v2::GameObject* object, lua_State* L) {
     return object->checkTurnIntoCrystals(
         lua_toboolean(L, 2),
@@ -638,6 +656,13 @@ static bool battle_GameObject_checkTurnIntoCrystals(SokuLib::v2::GameObject* obj
         luaL_checkinteger(L, 4),
         static_cast<float>(luaL_optnumber(L, 5, 0.0)),
         static_cast<float>(luaL_optnumber(L, 6, 0.0))
+    );
+}
+static void battle_Player_consumeCard(SokuLib::v2::Player* player, lua_State* L) {
+    return player->consumeCard(
+        luaL_optinteger(L, 2, 0),
+        luaL_optinteger(L, 3, 0),
+        luaL_optinteger(L, 4, 60)
     );
 }
 
@@ -850,9 +875,14 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addProperty("customData", battle_GameObject_getCustomDataProxy, battle_GameObject_setCustomDataProxy)
                 .addProperty("gpShort", ShadyLua::ArrayRef_from(&SokuLib::v2::GameObject::gpShort), true)
                 .addProperty("gpFloat", ShadyLua::ArrayRef_from(&SokuLib::v2::GameObject::gpFloat), true)
+                //.addProperty("absorbDensity", battle_GameObjectBase_getActionLock, 0)
+                //.addProperty("bulletDensity", battle_GameObjectBase_getMoveLock, 0)
 
                 .addFunction("getChildrenB", battle_GameObject_getChildren)
+                .addFunction("setParentA", &SokuLib::v2::GameObjectBase::setParentA)
+                .addFunction("setParentB", &SokuLib::v2::GameObject::setParentB)
                 .addFunction("setTail", &SokuLib::v2::GameObject::setTail)
+                .addFunction("removeTail", &SokuLib::v2::GameObject::removeTail)
                 .addFunction("getCustomData", battle_GameObject_getCustomData)
                 .addFunction("checkGrazed", &SokuLib::v2::GameObject::checkGrazed)
                 .addFunction("checkProjectileHit", &SokuLib::v2::GameObject::checkProjectileHit)
@@ -868,8 +898,8 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addProperty("teamId", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, teamId), false)
                     .addProperty("isRight", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, teamId), false)
                 .addProperty("paletteId", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, paletteId), false)
-                .addProperty("unknown4A6", &SokuLib::v2::Player::spellStopCounter, true)
                 .addProperty("spellStopCounter", &SokuLib::v2::Player::spellStopCounter, true)
+                    .addProperty("unknown4A6", &SokuLib::v2::Player::spellStopCounter, true)
                 .addProperty("groundDashCount", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, groundDashCount), true)
                 .addProperty("airDashCount", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, airDashCount), true)
                 .addProperty("currentSpirit", &SokuLib::v2::Player::currentSpirit, false)
@@ -882,6 +912,7 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addProperty("comboLimit", &SokuLib::v2::Player::comboLimit, false)
                 .addProperty("untech", &SokuLib::v2::Player::untech, false)
                 .addProperty("skillCancelCount", &SokuLib::v2::Player::skillCancelCount, true)
+                .addProperty("skillCancelUsed", ShadyLua::ArrayRef_from(&SokuLib::v2::Player::skillCancelsUsed), true)
 
                 .addProperty("meleeInvulTimer", &SokuLib::v2::Player::meleeInvulTimer, true)
                 .addProperty("grabInvulTimer", &SokuLib::v2::Player::grabInvulTimer, true)
@@ -899,6 +930,8 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addProperty("inputBuffered", MEMBER_ADDRESS(SokuLib::KeyInputLight, SokuLib::v2::Player, inputData.bufferedKeyInput), false)
                 .addProperty("gpShort", ShadyLua::ArrayRef_from(&SokuLib::v2::Player::gpShort), true)
                 .addProperty("gpFloat", ShadyLua::ArrayRef_from(&SokuLib::v2::Player::gpFloat), true)
+                .addProperty("actionLock", battle_GameObjectBase_getActionLock, 0)
+                .addProperty("moveLock", battle_GameObjectBase_getMoveLock, 0)
 
                 .addProperty("handCount", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, handInfo.cardCount), false)
                 .addFunction("handGetId", battle_Player_handGetId)
@@ -908,13 +941,31 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addFunction("updateGroundMovement", &SokuLib::v2::Player::updateGroundMovement)
                 .addFunction("decideShotAngle", &SokuLib::v2::Player::decideShotAngle)
                     .addFunction("updateAirMovement", &SokuLib::v2::Player::decideShotAngle)
-                .addFunction("handleCardSwitch", &SokuLib::v2::Player::handleCardSwitch)
-                .addFunction("useSystemCard", &SokuLib::v2::Player::useSystemCard)
-                .addFunction("canSpendSpirit", &SokuLib::v2::Player::canSpendSpirit)
-                .addFunction("getMoveLock", &SokuLib::v2::Player::getMoveLock)
-                .addFunction("canActivateCard", &SokuLib::v2::Player::canActivateCard)
+                .addFunction("applyGroundMechanics", &SokuLib::v2::Player::applyGroundMechanics)
+                .addFunction("applyAirMechanics", &SokuLib::v2::Player::applyAirMechanics)
+                .addFunction("playSFX", &SokuLib::v2::Player::playSFX)
+                .addFunction("checkTurnAround", &SokuLib::v2::Player::checkTurnAround)
+                    .addFunction("unknown487C20", &SokuLib::v2::Player::checkTurnAround)
                 .addFunction("isGrounded", &SokuLib::v2::Player::isGrounded)
+                .addFunction("addCardMeter", &SokuLib::v2::Player::addCardMeter)
+                .addFunction("consumeSpirit", &SokuLib::v2::Player::consumeSpirit)
+                .addFunction("consumeCard", battle_Player_consumeCard)
+                .addFunction("playSpellBackground", &SokuLib::v2::Player::playSpellBackground)
 
+                .addFunction("getMoveLock", &SokuLib::v2::Player::getMoveLock)
+                .addFunction("canSpendSpirit", &SokuLib::v2::Player::canSpendSpirit)
+                .addFunction("canActivateCard", &SokuLib::v2::Player::canActivateCard)
+                .addFunction("useSkill", &SokuLib::v2::Player::useSkill)
+                .addFunction("useSystemCard", &SokuLib::v2::Player::useSystemCard)
+                .addFunction("useSpellCard", &SokuLib::v2::Player::useSpellCard)
+                .addFunction("eventSkillUse", &SokuLib::v2::Player::eventSkillUse)
+                .addFunction("eventSpellUse", &SokuLib::v2::Player::eventSpellUse)
+                .addFunction("eventWeatherCycle", &SokuLib::v2::Player::eventWeatherCycle)
+                .addFunction("refreshInputBuffer", &SokuLib::v2::Player::refreshInputBuffer)
+                .addFunction("refreshCommandBuffer", &SokuLib::v2::Player::refreshInputCombination)
+                    .addFunction("unknown46d950", &SokuLib::v2::Player::refreshInputCombination)
+
+                .addFunction("handleCardSwitch", &SokuLib::v2::Player::handleCardSwitch)
                 .addFunction("handleHJ", &SokuLib::v2::Player::handleHJ)
                 .addFunction("handleHJInput", &SokuLib::v2::Player::handleHJInput)
                 .addFunction("handleGroundDash", &SokuLib::v2::Player::handleGroundDash)
@@ -923,22 +974,6 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addFunction("handleFwdAirDash", &SokuLib::v2::Player::handleFwdAirDash)
                 .addFunction("handleBackAirDash", &SokuLib::v2::Player::handleBackAirDash)
                 .addFunction("handleNormalFlight", &SokuLib::v2::Player::handleNormalFlight)
-
-                .addFunction("useSpellCard", &SokuLib::v2::Player::useSpellCard)
-                .addFunction("useSkill", &SokuLib::v2::Player::useSkill)
-                .addFunction("addCardMeter", &SokuLib::v2::Player::addCardMeter)
-                .addFunction("applyGroundMechanics", &SokuLib::v2::Player::applyGroundMechanics)
-                .addFunction("applyAirMechanics", &SokuLib::v2::Player::applyAirMechanics)
-                .addFunction("playSFX", &SokuLib::v2::Player::playSFX)
-                .addFunction("checkTurnAround", &SokuLib::v2::Player::checkTurnAround)
-                    .addFunction("unknown487C20", &SokuLib::v2::Player::checkTurnAround)
-                .addFunction("playSpellBackground", &SokuLib::v2::Player::playSpellBackground)
-                .addFunction("consumeSpirit", &SokuLib::v2::Player::consumeSpirit)
-                .addFunction("consumeCard", &SokuLib::v2::Player::consumeCard)
-                .addFunction("eventSkillUse", &SokuLib::v2::Player::eventSkillUse)
-                .addFunction("eventSpellUse", &SokuLib::v2::Player::eventSpellUse)
-                .addFunction("eventWeatherCycle", &SokuLib::v2::Player::eventWeatherCycle)
-                .addFunction("unknown46d950", &SokuLib::v2::Player::FUN_0046d950)
             .endClass()
 
             .beginClass<SokuLib::PlayerInfo>("PlayerInfo")
