@@ -17,6 +17,8 @@ public:
 
 class ModMenu : public SokuLib::IMenu {
 private:
+    static constexpr int PREVIEW_PREFETCH_RADIUS = 8;
+
     bool viewDirty = true;
     bool listDirty = true;
     bool settingsDirty = false;
