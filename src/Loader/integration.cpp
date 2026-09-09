@@ -165,7 +165,7 @@ static void LualibLoader(lua_State* L) {
 }
 
 bool EnablePackage(ModPackage* p) {
-    if (!std::filesystem::is_directory(p->path) && !std::filesystem::is_regular_file(p->path)) return false;
+    if (!std::filesystem::is_directory(p->path) && !std::filesystem::is_regular_file(p->path)) return true;
     p->package = ModPackage::basePackage->merge(p->path);
     if (!iniEnableLua) return true;
 
