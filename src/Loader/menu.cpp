@@ -147,7 +147,9 @@ void ModMenu::_() {}
 
 int ModMenu::onProcess() {
 	(guide.*SokuLib::union_cast<void (SokuLib::Guide::*)()>(0x443220))(); // Update
-	if (ModPackage::Notify()) viewDirty = listDirty = true;
+	auto noticeFlag = ModPackage::Notify();
+	viewDirty |= noticeFlag;
+	listDirty |= noticeFlag & ModPackage::NOTIFY_FILE;
 	if (ModPackage::descMutex.try_lock_shared()) {
 		if (listDirty) {
 			modList.updateList();

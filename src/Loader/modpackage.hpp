@@ -7,6 +7,11 @@
 
 class ModPackage {
 public:
+    enum NotifyFlag : int {
+        NOTIFY_NONE = 0,
+        NOTIFY_IMG  = 0b01,
+        NOTIFY_FILE = 0b10
+    };
     static std::filesystem::path basePath;
     static std::unique_ptr<ShadyCore::PackageEx> basePackage;
     static std::vector<ModPackage*> descPackage;
@@ -14,7 +19,7 @@ public:
     static void LoadFromLocalData();
     static void LoadFromFilesystem();
     static void LoadFromRemote();
-    static bool Notify();
+    static NotifyFlag Notify();
     static void CheckUpdates();
 
     ShadyCore::Package* package = 0;
