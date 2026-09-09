@@ -53,7 +53,9 @@ namespace {
 	private:
 		std::mutex _mutex;
 		std::thread* _thread;
-		bool _notify = false, _done = false, _sync = false;
+		bool _done = false, _sync = false;
+		bool _notifyFile = false;
+		bool _notifyImage = false;
 
 		FetchJson* remoteConfig = 0;
 		std::list<std::pair<ModPackage*, FetchFile*> > fileTasks;
@@ -88,7 +90,7 @@ namespace {
 				}
 			}
 
-			_notify = _sync = true;
+			_notifyFile = _sync = true;
 		}
 
 		void run() {
@@ -137,7 +139,7 @@ namespace {
 
  						delete i->second;
 						i = fileTasks.erase(i);
-						_notify = true;
+						_notifyFile = true;
 					} else ++i;
 				}
 
@@ -154,7 +156,7 @@ namespace {
 
  						delete i->second;
 						i = imageTasks.erase(i);
-						_notify = true;
+						_notifyImage = true;
 					} else ++i;
 				}
 
@@ -183,14 +185,19 @@ namespace {
 		}
 
 	public:
-		bool notify() {
+		int notify() {
 			std::lock_guard lock(_mutex);
 			tryJoin();
-
-			if (_notify) {
-				_notify = false;
-				return true;
-			} return false;
+			int ret = 0;
+			if (_notifyFile) {
+				_notifyFile = false;
+				ret |= ModPackage::NOTIFY_FILE;
+			}
+			if (_notifyImage) {
+				_notifyImage = false;
+				ret |= ModPackage::NOTIFY_IMG;
+			}
+			return ret;
 		}
 
 		void downloadFile(ModPackage* package) {
@@ -300,7 +307,7 @@ void ModPackage::LoadFromFilesystem() {
 }
 
 void ModPackage::LoadFromRemote() { downloadController.fetchRemote(); }
-bool ModPackage::Notify() { return downloadController.notify(); }
+ModPackage::NotifyFlag ModPackage::Notify() { return (NotifyFlag)downloadController.notify(); }
 
 void LoadPackage() {
 	ModPackage::LoadFromLocalData();
