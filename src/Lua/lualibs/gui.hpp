@@ -41,8 +41,14 @@ namespace ShadyLua {
     };
 
     class EffectManagerProxy : public SokuLib::v2::EffectManager_Select {
+        int updateHandler = LUA_REFNIL;
+        ShadyLua::LuaScript* script;//could also get it from SceneProxy/MenuProxy ctor
+        //static void __fastcall replUpdate();
     public:
         int loadPattern(lua_State* L);
+        int setUpdateHandler(lua_State* L);
+        virtual void Update() override;
+        virtual ~EffectManagerProxy();
     };
 
     static auto& BoxSprite = *(SokuLib::CDesign::Sprite**)0x89a390;
@@ -94,7 +100,7 @@ namespace ShadyLua {
         Renderer renderer;
 
         MenuProxy(int handler, lua_State* L);
-        ~MenuProxy() override = default;
+        ~MenuProxy() override;
         void _() override;
         int onProcess() override;
         int onRender() override;
