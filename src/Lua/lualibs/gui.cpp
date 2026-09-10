@@ -493,6 +493,13 @@ static int font_loadFontFile(lua_State* L) {
 ShadyLua::MenuProxy::MenuProxy(int handler, lua_State* L)
     : processHandler(handler), data(newTable(L)), script(ShadyLua::ScriptMap[L]) {}
 
+inline ShadyLua::MenuProxy::~MenuProxy() {
+    if (processHandler != LUA_REFNIL && script) {
+        std::lock_guard lock(script->mutex);
+        luaL_unref(script->L, LUA_REGISTRYINDEX, processHandler);
+    }
+}
+
 void ShadyLua::MenuProxy::_() {}
 int ShadyLua::MenuProxy::onProcess() {
     if (!ShadyLua::ScriptMap.contains(script->L))  return 0;
@@ -526,6 +533,70 @@ int ShadyLua::EffectManagerProxy::loadPattern(lua_State* L) {
     int reserve = argc < 3 ? 0 : luaL_checkinteger(L, 3);
     LoadPattern(name, reserve);
     return 0;
+}
+
+int ShadyLua::EffectManagerProxy::setUpdateHandler(lua_State* L) {
+    const int argc = lua_gettop(L);
+    // clear handler when nil or no second argument
+    if (argc < 2 || lua_isnil(L, 2)) {
+        if (updateHandler != LUA_REFNIL && script) {
+            luaL_unref(script->L, LUA_REGISTRYINDEX, updateHandler);
+        }
+        updateHandler = LUA_REFNIL;
+        script = nullptr;
+        return 0;
+    }
+    if (!lua_isfunction(L, 2)) return luaL_argerror(L, 2, "expected function or nil");
+    // create ref for new callback on this lua_State
+    lua_pushvalue(L, 2);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    // release previous ref
+    if (updateHandler != LUA_REFNIL && script) {
+        luaL_unref(script->L, LUA_REGISTRYINDEX, updateHandler);
+    }
+    updateHandler = ref;
+    script = ShadyLua::ScriptMap[L];
+    return 0;
+}
+
+void ShadyLua::EffectManagerProxy::Update() {
+    if (updateHandler != LUA_REFNIL && script) {
+        for (auto it = effects.begin(); it != effects.end(); ) {
+            auto fx = *it;
+            { std::lock_guard scriptGuard(script->mutex);
+                lua_State* L = script->L;
+                lua_rawgeti(L, LUA_REGISTRYINDEX, updateHandler);
+                Stack<ShadyLua::Renderer::Effect*>::push(L, fx);
+                lua_pushinteger(L, fx->frameState.actionId);
+                if (lua_pcall(L, 2, 1, 0)) {
+                    Logger::Error(lua_tostring(L, -1));
+                }
+                else if (!lua_isnil(L, -1) && lua_toboolean(L, -1)) {
+                    //skipped
+                } else {//default handler
+                    if (fx->advanceFrame()) {
+                        //--fx->unknown158;
+                    }
+                } lua_pop(L, 1);
+            }
+            if (fx->unknown158 == 0) {//lifetime
+                (handles.*SokuLib::union_cast<void(decltype(handles)::*)(int)>(0x45ed10))(fx->unknown15C);//texture related?
+                //erase fx
+                it = effects.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    } else {
+        SokuLib::v2::EffectManager_Select::Update();
+    }
+}
+
+inline ShadyLua::EffectManagerProxy::~EffectManagerProxy() {
+    if (updateHandler != LUA_REFNIL && script) {
+        std::lock_guard lock(script->mutex);
+        luaL_unref(script->L, LUA_REGISTRYINDEX, updateHandler);
+    }
 }
 
 std::unordered_multimap<SokuLib::IScene*, ShadyLua::SceneProxy*> ShadyLua::SceneProxy::listeners;
@@ -675,6 +746,7 @@ void ShadyLua::LualibGui(lua_State* L) {
                 .addFunction("pgDn", &MenuCursorProxy::pgDn)
             .endClass()
             .beginClass<ShadyLua::EffectManagerProxy>("EffectManager")
+                .addFunction("setUpdater", &ShadyLua::EffectManagerProxy::setUpdateHandler)
                 .addFunction("loadResource", &ShadyLua::EffectManagerProxy::loadPattern)
                 .addFunction("clear", &ShadyLua::EffectManagerProxy::ClearPattern)
                 .addFunction("clearEffects", &ShadyLua::EffectManagerProxy::ClearEffects)
