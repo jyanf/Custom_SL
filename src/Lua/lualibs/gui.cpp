@@ -680,14 +680,23 @@ void ShadyLua::LualibGui(lua_State* L) {
                 .addFunction("clearEffects", &ShadyLua::EffectManagerProxy::ClearEffects)
             .endClass()
             .beginClass<ShadyLua::Renderer::Effect>("Effect")
+                .addStaticData("SelectEffect", enumMap<ShadyLua::Renderer::SelectEffect>(), false)
+                .addStaticData("BattleEffect", enumMap<ShadyLua::Renderer::BattleEffect>(), false)
+                .addStaticData("InfoEffect", enumMap<ShadyLua::Renderer::InfoEffect>(), false)
+                .addStaticData("WeatherEffect", enumMap<ShadyLua::Renderer::WeatherEffect>(), false)
+
                 .addProperty("ptr", gui_Effect_getPtr, 0)
                 .addData("position", &ShadyLua::Renderer::Effect::position, true)
                 .addData("speed", &ShadyLua::Renderer::Effect::speed, true)
                 .addData("gravity", &ShadyLua::Renderer::Effect::gravity, true)
                 .addData("center", &ShadyLua::Renderer::Effect::center, true)
                 .addProperty("direction", BYTE_FIELD_GETTER(ShadyLua::Renderer::Effect, direction), BYTE_FIELD_SETTER_CASTED(SokuLib::Direction, ShadyLua::Renderer::Effect, direction))
+                .addProperty("renderInfo", &ShadyLua::Renderer::Effect::renderInfos, true)
+                .addProperty("isGui", &ShadyLua::Renderer::Effect::isGui, true)
+                    
                 .addData("lifetime", &ShadyLua::Renderer::Effect::unknown158, true)
                     .addData("isAlive", &ShadyLua::Renderer::Effect::unknown158, true)
+                .addProperty("parent", MEMBER_ADDRESS(SokuLib::v2::GameObjectBase*, ShadyLua::Renderer::Effect, unknown164), false)
                 .addProperty("layer", BYTE_FIELD_GETTER(ShadyLua::Renderer::Effect, layer), BYTE_FIELD_SETTER(ShadyLua::Renderer::Effect, layer))
                 // frameState
                 .addProperty("actionId", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.actionId), false)
