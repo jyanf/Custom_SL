@@ -62,6 +62,12 @@ namespace ShadyLua {
         bool isActive = true;
 
         using Effect = SokuLib::v2::SelectEffectObject;
+        enum EffectType {
+            SelectEffect= 0,
+            BattleEffect,
+            InfoEffect,
+            WeatherEffect
+        };
         ~Renderer();
         void update();
         void render();
