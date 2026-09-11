@@ -48,6 +48,7 @@ namespace ShadyLua {
         int loadPattern(lua_State* L);
         int setUpdateHandler(lua_State* L);
         virtual void Update() override;
+        virtual SokuLib::v2::EffectObjectBase* CreateEffect(int action, float x, float y, char dir, char layer, int parent) override;
         virtual ~EffectManagerProxy();
     };
 
