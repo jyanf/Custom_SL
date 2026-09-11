@@ -399,7 +399,7 @@ int ShadyLua::Renderer::createEffect(lua_State* L) {
     int layer = (argc < 6) ? 0 : luaL_checkinteger(L, 6);
     Effect* effect = (Effect*) effects.CreateEffect(id, x, y, dir, layer, 0);
     Stack<Effect*>::push(L, effect);
-    activeLayers.insert(layer);
+    if (effect) activeLayers.insert(layer);
     return 1;
 }
 
@@ -594,6 +594,7 @@ void ShadyLua::EffectManagerProxy::Update() {
 }
 
 SokuLib::v2::EffectObjectBase* ShadyLua::EffectManagerProxy::CreateEffect(int action, float x, float y, char dir, char layer, int parent) {
+    if (patternById.find(action) == patternById.end()) return nullptr;//avoid crash
     SokuLib::v2::EffectObjectBase* inserted = reinterpret_cast<SokuLib::v2::EffectObjectBase* (__fastcall*)(DWORD This)>(0x423f80)((DWORD(this) + 4));
     inserted->unknown164 = parent;
     inserted->textures = &textureIds;
@@ -604,6 +605,7 @@ SokuLib::v2::EffectObjectBase* ShadyLua::EffectManagerProxy::CreateEffect(int ac
     inserted->layer = layer;
     //do not use org vfunc init, which could be replaced by battle.replaceEffects
     //inserted->initializeAction();
+    return inserted;
 }
 
 inline ShadyLua::EffectManagerProxy::~EffectManagerProxy() {
