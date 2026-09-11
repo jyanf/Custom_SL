@@ -428,7 +428,7 @@ int ShadyLua::Renderer::destroy(lua_State* L) {
             }
         } else if (Stack<Effect*>::Helper::isInstance(L, i)) {
             auto effect = Stack<Effect*>::get(L, i);
-            effect->unknown158 = false;
+            effect->lifetime = false;
         } else if (Stack<MenuCursorProxy*>::Helper::isInstance(L, i)) {
             if (cursors.empty()) continue;
             auto cursor = Stack<MenuCursorProxy*>::get(L, i);
@@ -445,7 +445,7 @@ void ShadyLua::Renderer::clear() {
     cursors.clear();
     guiSchema.clear();
     sprites.clear();
-    effects.ClearPattern();
+    effects.ClearPattern();//old fix
     activeLayers.clear();
     RemoveShow();
 }
@@ -581,8 +581,8 @@ void ShadyLua::EffectManagerProxy::Update() {
                 //--fx->unknown158;
             }
         }
-        if (fx->unknown158 == 0) {//lifetime
-            (handles.*SokuLib::union_cast<void(decltype(handles)::*)(int)>(0x45ed10))(fx->unknown15C);//texture related?
+        if (fx->lifetime == 0) {//lifetime
+            (handles.*SokuLib::union_cast<void(decltype(handles)::*)(int)>(0x45ed10))(fx->handle);//texture related?
             //erase fx
             it = effects.erase(it);
         } else {
@@ -596,7 +596,7 @@ void ShadyLua::EffectManagerProxy::Update() {
 SokuLib::v2::EffectObjectBase* ShadyLua::EffectManagerProxy::CreateEffect(int action, float x, float y, char dir, char layer, int parent) {
     if (patternById.find(action) == patternById.end()) return nullptr;//avoid crash
     SokuLib::v2::EffectObjectBase* inserted = reinterpret_cast<SokuLib::v2::EffectObjectBase* (__fastcall*)(DWORD This)>(0x423f80)((DWORD(this) + 4));
-    inserted->unknown164 = parent;
+    inserted->parent = (SokuLib::v2::AnimationObject*)parent;
     inserted->textures = &textureIds;
     inserted->patternMap = &patternById;
     inserted->setAction(action);
@@ -782,9 +782,9 @@ void ShadyLua::LualibGui(lua_State* L) {
                 .addProperty("renderInfo", &ShadyLua::Renderer::Effect::renderInfos, true)
                 .addProperty("isGui", &ShadyLua::Renderer::Effect::isGui, true)
                     
-                .addData("lifetime", &ShadyLua::Renderer::Effect::unknown158, true)
-                    .addData("isAlive", &ShadyLua::Renderer::Effect::unknown158, true)
-                .addProperty("parent", MEMBER_ADDRESS(SokuLib::v2::GameObjectBase*, ShadyLua::Renderer::Effect, unknown164), false)
+                .addData("lifetime", &ShadyLua::Renderer::Effect::lifetime, true)
+                    .addData("isAlive", &ShadyLua::Renderer::Effect::lifetime, true)
+                .addProperty("parent", MEMBER_ADDRESS(SokuLib::v2::GameObjectBase*, ShadyLua::Renderer::Effect, parent), false)
                 .addProperty("layer", BYTE_FIELD_GETTER(ShadyLua::Renderer::Effect, layer), BYTE_FIELD_SETTER(ShadyLua::Renderer::Effect, layer))
                 // frameState
                 .addProperty("actionId", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.actionId), false)
