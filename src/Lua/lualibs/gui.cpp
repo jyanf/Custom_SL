@@ -560,36 +560,50 @@ int ShadyLua::EffectManagerProxy::setUpdateHandler(lua_State* L) {
 }
 
 void ShadyLua::EffectManagerProxy::Update() {
-    if (updateHandler != LUA_REFNIL && script) {
-        for (auto it = effects.begin(); it != effects.end(); ) {
-            auto fx = *it;
-            { std::lock_guard scriptGuard(script->mutex);
-                lua_State* L = script->L;
-                lua_rawgeti(L, LUA_REGISTRYINDEX, updateHandler);
-                Stack<ShadyLua::Renderer::Effect*>::push(L, fx);
-                lua_pushinteger(L, fx->frameState.actionId);
-                if (lua_pcall(L, 2, 1, 0)) {
-                    Logger::Error(lua_tostring(L, -1));
-                }
-                else if (!lua_isnil(L, -1) && lua_toboolean(L, -1)) {
-                    //skipped
-                } else {//default handler
-                    if (fx->advanceFrame()) {
-                        //--fx->unknown158;
-                    }
-                } lua_pop(L, 1);
+    for (auto it = effects.begin(); it != effects.end(); ) {
+        auto fx = *it;
+        bool skipped = false;
+        if (updateHandler != LUA_REFNIL && script) {
+            std::lock_guard scriptGuard(script->mutex);
+            lua_State* L = script->L;
+            lua_rawgeti(L, LUA_REGISTRYINDEX, updateHandler);
+            Stack<ShadyLua::Renderer::Effect*>::push(L, fx);
+            lua_pushinteger(L, fx->frameState.actionId);
+            if (lua_pcall(L, 2, 1, 0)) {
+                Logger::Error(lua_tostring(L, -1));
             }
-            if (fx->unknown158 == 0) {//lifetime
-                (handles.*SokuLib::union_cast<void(decltype(handles)::*)(int)>(0x45ed10))(fx->unknown15C);//texture related?
-                //erase fx
-                it = effects.erase(it);
-            } else {
-                ++it;
+            else if (!lua_isnil(L, -1)) {
+                skipped = true;//lua_toboolean(L, -1);
+            } lua_pop(L, 1);
+        }
+        if (!skipped) {//default handler
+            if (fx->advanceFrame()) {
+                //--fx->unknown158;
             }
         }
-    } else {
-        SokuLib::v2::EffectManager_Select::Update();
+        if (fx->unknown158 == 0) {//lifetime
+            (handles.*SokuLib::union_cast<void(decltype(handles)::*)(int)>(0x45ed10))(fx->unknown15C);//texture related?
+            //erase fx
+            it = effects.erase(it);
+        } else {
+            ++it;
+        }
     }
+    //do not use org vfunc update, which could be replaced by battle.replaceEffects
+    //SokuLib::v2::EffectManager_Select::Update();
+}
+
+SokuLib::v2::EffectObjectBase* ShadyLua::EffectManagerProxy::CreateEffect(int action, float x, float y, char dir, char layer, int parent) {
+    SokuLib::v2::EffectObjectBase* inserted = reinterpret_cast<SokuLib::v2::EffectObjectBase* (__fastcall*)(DWORD This)>(0x423f80)((DWORD(this) + 4));
+    inserted->unknown164 = parent;
+    inserted->textures = &textureIds;
+    inserted->patternMap = &patternById;
+    inserted->setAction(action);
+    inserted->position.x = x; inserted->position.y = y;
+    inserted->direction = dir;
+    inserted->layer = layer;
+    //do not use org vfunc init, which could be replaced by battle.replaceEffects
+    //inserted->initializeAction();
 }
 
 inline ShadyLua::EffectManagerProxy::~EffectManagerProxy() {
