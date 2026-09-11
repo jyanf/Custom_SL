@@ -347,6 +347,7 @@ namespace {
 }
 
 void ShadyLua::RemoveMemoryEvents(LuaScript* script) {
+    // TODO listeners lock
     for (auto hook : hookedAddr) {
         for (auto iter = hook.second->callbacks.begin(); iter != hook.second->callbacks.end();) {
             if (iter->getObject()->L == script->L) iter = hook.second->callbacks.erase(iter);
@@ -366,6 +367,15 @@ static std::string memory_readbytes(int address, int size) {
     VirtualProtect(reinterpret_cast<LPVOID>(address), size, PAGE_EXECUTE_READWRITE, &dwOldProtect);
     std::string value((char*)address, size);
     VirtualProtect(reinterpret_cast<LPVOID>(address), size, dwOldProtect, &dwOldProtect);
+    return value;
+}
+
+/** Read a bool from memory */
+static bool memory_readbool(int address) {
+    DWORD dwOldProtect;
+    VirtualProtect(reinterpret_cast<LPVOID>(address), 1, PAGE_EXECUTE_READWRITE, &dwOldProtect);
+    bool value = *(bool*)address;
+    VirtualProtect(reinterpret_cast<LPVOID>(address), 1, dwOldProtect, &dwOldProtect);
     return value;
 }
 
@@ -411,6 +421,14 @@ static void memory_writebytes(int address, std::string value) {
     VirtualProtect(reinterpret_cast<LPVOID>(address), value.size(), PAGE_EXECUTE_READWRITE, &dwOldProtect);
     memcpy((void*)address, value.c_str(), value.size());
     VirtualProtect(reinterpret_cast<LPVOID>(address), value.size(), dwOldProtect, &dwOldProtect);
+}
+
+/** Writes a bool into memory */
+static void memory_writebool(int address, bool value) {
+    DWORD dwOldProtect;
+    VirtualProtect(reinterpret_cast<LPVOID>(address), 1, PAGE_EXECUTE_READWRITE, &dwOldProtect);
+    *(bool*)address = value;
+    VirtualProtect(reinterpret_cast<LPVOID>(address), 1, dwOldProtect, &dwOldProtect);
 }
 
 /** Writes a double into memory */
@@ -523,11 +541,13 @@ void ShadyLua::LualibMemory(lua_State* L) {
     getGlobalNamespace(L)
         .beginNamespace("memory")
             .addFunction("readbytes", memory_readbytes)
+            .addFunction("readbool", memory_readbool)
             .addFunction("readdouble", memory_readdouble)
             .addFunction("readfloat", memory_readfloat)
             .addFunction("readint", memory_readint)
             .addFunction("readshort", memory_readshort)
             .addFunction("writebytes", memory_writebytes)
+            .addFunction("writebool", memory_writebool)
             .addFunction("writedouble", memory_writedouble)
             .addFunction("writefloat", memory_writefloat)
             .addFunction("writeint", memory_writeint)

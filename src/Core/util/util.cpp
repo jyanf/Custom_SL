@@ -116,11 +116,17 @@ void ShadyUtil::XmlPrinter::closeNode() {
 
 namespace {
 	struct Change {
+		static std::list<Change> changes;
+
 		ShadyUtil::FileWatcher* watcher;
 		ShadyUtil::FileWatcher::Action action;
 		inline bool operator==(const Change& o) { return watcher == o.watcher && action == o.action; }
+		inline static void push_unique(const Change& newchange) {
+			for (auto& change : changes) if (change == newchange) return;
+			changes.push_back(newchange);
+		}
 	};
-	std::list<Change> changes;
+	std::list<Change> Change::changes;
 
 	const size_t bufferSize = 32*1024;
 	struct Delegate {
@@ -140,11 +146,6 @@ namespace {
 		inline ShadyUtil::FileWatcher* _find(const std::wstring_view& filename) {
 			for (auto file : files) if (file->filename == filename) return file;
 			return 0;
-		}
-
-		inline void _push_unique(const Change& newchange) {
-			for (auto& change : changes) if (change == newchange) return;
-			changes.push_back(newchange);
 		}
 
 		static inline Delegate* create(const std::filesystem::path& folder) {
@@ -187,20 +188,20 @@ namespace {
 					switch (info->Action) {
 					case FILE_ACTION_ADDED:
 					case FILE_ACTION_REMOVED:
-						if (watcher = _find(filename)) _push_unique({watcher, wasTree ? ShadyUtil::FileWatcher::MODIFIED : (ShadyUtil::FileWatcher::Action)info->Action});
+						if (watcher = _find(filename)) Change::push_unique({watcher, wasTree ? ShadyUtil::FileWatcher::MODIFIED : (ShadyUtil::FileWatcher::Action)info->Action});
 						modified = true; break;
 					case FILE_ACTION_MODIFIED:
-						if (watcher = _find(filename)) _push_unique({watcher, (ShadyUtil::FileWatcher::Action)info->Action});
+						if (watcher = _find(filename)) Change::push_unique({watcher, (ShadyUtil::FileWatcher::Action)info->Action});
 						modified = true; break;
 					case FILE_ACTION_RENAMED_OLD_NAME:
 						oldFilename = filename;
 						modified = true; break;
 					case FILE_ACTION_RENAMED_NEW_NAME:
 						if (watcher = _find(oldFilename)) {
-							_push_unique({watcher, wasTree ? ShadyUtil::FileWatcher::MODIFIED : ShadyUtil::FileWatcher::REMOVED});
+							Change::push_unique({watcher, wasTree ? ShadyUtil::FileWatcher::MODIFIED : ShadyUtil::FileWatcher::REMOVED});
 							modified = true;
 						} else if (watcher = _find(filename)) {
-							_push_unique({watcher, wasTree ? ShadyUtil::FileWatcher::MODIFIED : ShadyUtil::FileWatcher::CREATED});
+							Change::push_unique({watcher, wasTree ? ShadyUtil::FileWatcher::MODIFIED : ShadyUtil::FileWatcher::CREATED});
 							modified = true;
 						} break;
 					}
@@ -271,6 +272,7 @@ ShadyUtil::FileWatcher* ShadyUtil::FileWatcher::getNextChange() {
 	std::unique_lock lock(delegateMutex, std::try_to_lock);
 	if (!lock.owns_lock()) return 0;
 
+	auto& changes = Change::changes;
 	if (changes.empty() && handles.size()) {
 		bool modified;
 		do {
@@ -287,6 +289,12 @@ ShadyUtil::FileWatcher* ShadyUtil::FileWatcher::getNextChange() {
 	watcher->action = changes.front().action;
 	changes.pop_front();
 	return watcher;
+}
+
+void ShadyUtil::FileWatcher::Unget(ShadyUtil::FileWatcher* watcher, ShadyUtil::FileWatcher::Action action) {
+	if (!watcher) return;
+	std::lock_guard lock(delegateMutex);
+	Change::push_unique({ watcher, action });
 }
 
 #endif /* _WIN32 */

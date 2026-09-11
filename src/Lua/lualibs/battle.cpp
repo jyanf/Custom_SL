@@ -23,12 +23,12 @@ int ShadyLua::CustomDataProxy::__newindex(lua_State* L) {
 
 namespace {
     struct playerDataHash {
-        inline std::size_t operator()(const std::pair<lua_State*, SokuLib::v2::GameObjectBase*>& key) const {
+        inline std::size_t operator()(const std::pair<lua_State*, DWORD>& key) const {
             return ((size_t)key.first) ^ ((size_t)key.second);
         }
     };
-    std::unordered_map<std::pair<lua_State*, SokuLib::v2::Player*>, LuaRef, playerDataHash> playerData;
-    static inline LuaRef& playerDataInsertOrGet(lua_State* L, SokuLib::v2::Player* player) {
+    std::unordered_map<std::pair<lua_State*, DWORD>, LuaRef, playerDataHash> playerData;
+    static inline LuaRef& playerDataInsertOrGet(lua_State* L, DWORD player) {
         return playerData.insert({std::pair(L, player), newTable(L)}).first->second;
     }
 
@@ -69,9 +69,12 @@ namespace {
         }
     }
 
+    static auto& EffectManager_Effect_instance = *reinterpret_cast<SokuLib::v2::EffectManager_Effect**>(0x8985f0);
     template <class T>
     struct ObjectHook : ShadyLua::Hook {
-        static_assert(std::is_base_of<SokuLib::v2::GameObjectBase, T>::value, "Object not derived from GameObjectBase");
+        static_assert(std::is_base_of_v<SokuLib::v2::GameObjectBase, T> 
+            || std::is_base_of_v<SokuLib::v2::EffectObjectBase, T>,
+            "Object not derived from GameObjectBase or EffectObjectBase");
         using typeFn = bool (__fastcall *)(T*);
         static inline typeFn origUpdate, origInitSeq, origInit;
         static inline std::list<HookData> listeners;
@@ -81,23 +84,50 @@ namespace {
             if (!replUpdate(object)) origUpdate(object);
         }
 
+        static DWORD getEffectDataKey(T* object) {
+            if constexpr (std::is_base_of<SokuLib::v2::EffectObjectBase, T>::value) {
+                if constexpr (std::is_same_v<SokuLib::v2::EffectObject, T>) {//GameObjectBase* parent
+                    return (DWORD)EffectManager_Effect_instance;//SokuLib::v2::EffectManager_
+                } else if constexpr (std::is_same_v<SokuLib::v2::InfoEffectObject, T>) {//no parent
+                    return (DWORD)SokuLib::v2::InfoManagerBase::instance;
+                } else if constexpr (std::is_same_v<SokuLib::v2::WeatherEffectObject, T>) {//no parent
+                    return (DWORD)SokuLib::v2::WeatherManager::instance;
+                } else if constexpr (std::is_same_v<SokuLib::v2::SelectEffectObject, T>) {//no parent
+                    //return SokuLib::_vtable_info<T>::baseAddr;
+                    return 0;
+                }
+            }
+            return 0;
+        }
+
         static bool __fastcall replUpdate(T* object) {
             for (auto& data : listeners) {
                 if (data.updateHandler == LUA_REFNIL) continue;
                 auto L = data.script->L;
-
+                int n = 0;
                 lua_rawgeti(L, LUA_REGISTRYINDEX, data.updateHandler);
-                if constexpr(std::is_base_of<SokuLib::v2::Player, T>::value) {
+                if constexpr(std::is_base_of<SokuLib::v2::EffectObjectBase, T>::value) {
+                    luabridge::push(L, (ShadyLua::Renderer::Effect*)object);//reuse gui module registry
+                    lua_pushinteger(L, object->frameState.actionId);
+                    n = 2;
+                    auto datakey = getEffectDataKey(object);
+                    if (datakey) {
+                        luabridge::push(L, playerDataInsertOrGet(L, datakey));
+                        ++n;
+                    }
+                } else if constexpr(std::is_base_of<SokuLib::v2::Player, T>::value) {
                     luabridge::push(L, (SokuLib::v2::Player*)object);
                     lua_pushinteger(L, object->frameState.actionId);
-                    luabridge::push(L, playerDataInsertOrGet(L, (SokuLib::v2::Player*) object));
+                    luabridge::push(L, playerDataInsertOrGet(L, (DWORD)object));
+                    n = 3;
                 } else {
                     luabridge::push(L, (SokuLib::v2::GameObject*)object);
                     lua_pushinteger(L, object->frameState.actionId);
-                    luabridge::push(L, playerDataInsertOrGet(L, object->gameData.owner));
+                    luabridge::push(L, playerDataInsertOrGet(L, (DWORD)object->gameData.owner));
+                    n = 3;
                 }
 
-                if (lua_pcall(L, 3, 1, 0)) {
+                if (lua_pcall(L, n, 1, 0)) {
                     Logger::Error(lua_tostring(L, -1));
                     lua_pop(L, 1);
                 } else if (!lua_isnil(L, -1)) {
@@ -113,19 +143,30 @@ namespace {
             for (auto& data : listeners) {
                 if (data.initSeqHandler == LUA_REFNIL) continue;
                 auto L = data.script->L;
-
+                int n = 0;
                 lua_rawgeti(L, LUA_REGISTRYINDEX, data.initSeqHandler);
-                if constexpr(std::is_base_of<SokuLib::v2::Player, T>::value) {
+                if constexpr (std::is_base_of<SokuLib::v2::EffectObjectBase, T>::value) {
+                    luabridge::push(L, (ShadyLua::Renderer::Effect*)object);//reuse gui module registry
+                    lua_pushinteger(L, object->frameState.actionId);
+                    n = 2;
+                    auto datakey = getEffectDataKey(object);
+                    if (datakey) {
+                        luabridge::push(L, playerDataInsertOrGet(L, datakey));
+                        ++n;
+                    }
+                } else if constexpr(std::is_base_of<SokuLib::v2::Player, T>::value) {
                     luabridge::push(L, (SokuLib::v2::Player*)object);
                     lua_pushinteger(L, object->frameState.actionId);
-                    luabridge::push(L, playerDataInsertOrGet(L, (SokuLib::v2::Player*) object));
+                    luabridge::push(L, playerDataInsertOrGet(L, (DWORD)object));
+                    n = 3;
                 } else {
                     luabridge::push(L, (SokuLib::v2::GameObject*)object);
                     lua_pushinteger(L, object->frameState.actionId);
-                    luabridge::push(L, playerDataInsertOrGet(L, object->gameData.owner));
+                    luabridge::push(L, playerDataInsertOrGet(L, (DWORD)object->gameData.owner));
+                    n = 3;
                 }
 
-                if (lua_pcall(L, 3, 1, 0)) {
+                if (lua_pcall(L, n, 1, 0)) {
                     Logger::Error(lua_tostring(L, -1));
                     lua_pop(L, 1);
                 } else if (!lua_isnil(L, -1)) {
@@ -146,17 +187,27 @@ namespace {
             for (auto& data : listeners) {
                 if (data.initHandler == LUA_REFNIL) continue;
                 auto L = data.script->L;
-
+                int n = 0;
                 lua_rawgeti(L, LUA_REGISTRYINDEX, data.initHandler);
-                if constexpr(std::is_base_of<SokuLib::v2::Player, T>::value) {
+                if constexpr (std::is_base_of<SokuLib::v2::EffectObjectBase, T>::value) {//unused branch
+                    luabridge::push(L, (ShadyLua::Renderer::Effect*)object);//reuse gui module registry
+                    n = 1;
+                    auto datakey = getEffectDataKey(object);
+                    if (datakey) {
+                        luabridge::push(L, playerDataInsertOrGet(L, datakey));
+                        ++n;
+                    }
+                } else if constexpr(std::is_base_of<SokuLib::v2::Player, T>::value) {
                     luabridge::push(L, (SokuLib::v2::Player*)object);
-                    luabridge::push(L, playerDataInsertOrGet(L, (SokuLib::v2::Player*) object));
+                    luabridge::push(L, playerDataInsertOrGet(L, (DWORD)object));
+                    n = 2;
                 } else {
-                    luabridge::push(L, (SokuLib::v2::GameObject*)object);
-                    luabridge::push(L, playerDataInsertOrGet(L, object->gameData.owner));
+                    luabridge::push(L, (SokuLib::v2::GameObject*)object);//unused branch
+                    luabridge::push(L, playerDataInsertOrGet(L, (DWORD)object->gameData.owner));
+                    n = 2;
                 }
 
-                if (lua_pcall(L, 2, 1, 0)) {
+                if (lua_pcall(L, n, 1, 0)) {
                     Logger::Error(lua_tostring(L, -1));
                 } lua_pop(L, 1);
             }
@@ -186,7 +237,13 @@ namespace {
         virtual ~ObjectHook() {
             const DWORD ADDR = SokuLib::_vtable_info<T>::baseAddr;
             DWORD prot; VirtualProtect((LPVOID)ADDR, 19*4, PAGE_EXECUTE_WRITECOPY, &prot);
-            SokuLib::TamperDword(SokuLib::GetVirtualTableOf(&T::update), origUpdate);
+            if constexpr (std::is_base_of<SokuLib::v2::Player, T>::value) {
+                DWORD prot2; VirtualProtect((LPVOID)customUpdateAddress, 7, PAGE_EXECUTE_WRITECOPY, &prot2);
+                memcpy((void*)customUpdateAddress, "\x0f\xbf\x86", 3); // MOVSX EAX, word ptr[ECX+13C];
+                *(DWORD*)(customUpdateAddress + 3) = 0x13c;
+                VirtualProtect((LPVOID)customUpdateAddress, 7, prot2, &prot2);
+            } else SokuLib::TamperDword(SokuLib::GetVirtualTableOf(&T::update), origUpdate);
+
             SokuLib::TamperDword(SokuLib::GetVirtualTableOf(&T::initializeAction), origInitSeq);
             if constexpr(std::is_base_of<SokuLib::v2::Player, T>::value)
                 SokuLib::TamperDword(SokuLib::GetVirtualTableOf(&T::initialize), origInit);
@@ -350,7 +407,7 @@ static unsigned int roll_saveState() {
 
     for (auto& data : playerData) {
         lua_State* L = data.first.first;
-        SokuLib::v2::Player* player = data.first.second;
+        DWORD player = data.first.second;
         auto& userdata = data.second;
 
         stream->write((char*)&L, sizeof(L));
@@ -371,7 +428,7 @@ static void roll_loadStatePre(size_t frame, unsigned int address) {
 
     for (int i = 0; i < players; ++i) {
         lua_State* L; stream->read((char*)&L, sizeof(L));
-        SokuLib::v2::Player* player; stream->read((char*)&player, sizeof(player));
+        DWORD player; stream->read((char*)&player, sizeof(player));
         lua_deserialize(*stream, L);
         playerData.insert_or_assign(std::pair(L, player), LuaRef::fromStack(L));
     }
@@ -428,6 +485,25 @@ static inline void addObjectListener(const HookData& data) {
             roll_freeState,
         }; SetCallbacks(&callbacks);
     }
+}
+
+static inline std::string battle_colorex_tostring(const SokuLib::DrawUtils::DxSokuColor* self) {
+    return std::format("{{ a:{:d}, r:{:d}, g:{:d}, b:{:d} }}", self->a, self->r, self->g, self->b);
+}
+static SokuLib::DrawUtils::DxSokuColor battle_colorex_ctor(lua_State* L) {
+    using SokuLib::DrawUtils::DxSokuColor;
+    const int argc = lua_gettop(L)-1;//rm self
+    if (argc <= 1) {
+        unsigned int color = argc==0 ? 0xFFFFFFFFu : static_cast<unsigned>(luaL_checkinteger(L, 2));
+        return color;
+    } else if (argc <= 4) {
+        unsigned char a = static_cast<unsigned char>(luaL_optinteger(L, 2, 0xFF));
+        unsigned char r = static_cast<unsigned char>(luaL_optinteger(L, 3, 0xFF));
+        unsigned char g = static_cast<unsigned char>(luaL_optinteger(L, 4, 0xFF));
+        unsigned char b = static_cast<unsigned char>(luaL_optinteger(L, 5, 0xFF));
+        return DxSokuColor(r, g, b, a);
+    }
+    return luaL_error(L, "DxSokuColor(): expected 0~4 arguments");
 }
 
 static int battle_replaceCharacter(lua_State* L) {
@@ -512,6 +588,31 @@ static int battle_replaceObjects(lua_State* L) {
     return 0;
 }
 
+static int battle_replaceEffects(lua_State* L) {
+    unsigned int c = luaL_checkinteger(L, 1);
+    HookData data(L);
+    if (lua_isfunction(L, 2)) {
+        lua_pushvalue(L, 2);
+        data.updateHandler = luaL_ref(L, LUA_REGISTRYINDEX);
+    }
+    if (lua_isfunction(L, 3)) {
+        lua_pushvalue(L, 3);
+        data.initSeqHandler = luaL_ref(L, LUA_REGISTRYINDEX);
+    }
+
+    switch (c) {
+    case ShadyLua::Renderer::SelectEffect:  addObjectListener<SokuLib::v2::SelectEffectObject>(data); break;
+    case ShadyLua::Renderer::BattleEffect:  addObjectListener<SokuLib::v2::EffectObject>(data); break;
+    case ShadyLua::Renderer::InfoEffect:    addObjectListener<SokuLib::v2::InfoEffectObject>(data); break;
+    case ShadyLua::Renderer::WeatherEffect: addObjectListener<SokuLib::v2::WeatherEffectObject>(data); break;
+    default: luaL_error(L, "Effect type not found: %d", c);
+    }
+    if (lua_getglobal(L, "CloseDesyncAlert") != LUA_TBOOLEAN or !lua_toboolean(L, -1))
+        if (c!=ShadyLua::Renderer::SelectEffect) Logger::Warning("ALERT: a mod that can cause desync was loaded!");
+    lua_pop(L, 1);
+    return 0;
+}
+
 static int battle_GameObjectBase_getPtr(lua_State* L) {
     auto o = Stack<SokuLib::v2::GameObjectBase*>::get(L, 1);
     lua_pushinteger(L, (int)o);
@@ -536,22 +637,6 @@ static int battle_GameObjectBase_getOpponent(lua_State* L) {
     return 1;
 }
 
-template<typename Class, auto Field>
-static int battle_getByteField(lua_State* L) {
-    auto o = Stack<Class*>::get(L, 1);
-    lua_pushinteger(L, o->*Field);
-    return 1;
-}
-template<typename Class, auto Field, typename Cast = char>
-static int battle_setByteField(lua_State* L) {
-    auto o = Stack<Class*>::get(L, 1);
-    o->*Field = (Cast)luaL_checkinteger(L, 2);
-    return 0;
-}
-#define BYTE_FIELD_GETTER(t, f) battle_getByteField<t, &t::f>
-#define BYTE_FIELD_SETTER_CASTED(c, t, f) battle_setByteField<t, &t::f, c>
-#define BYTE_FIELD_SETTER(t, f) battle_setByteField<t, &t::f>
-
 static int battle_GameObjectBase_getShadowOn(lua_State* L) {
     auto o = Stack<SokuLib::v2::GameObjectBase*>::get(L, 1);
     lua_pushboolean(L, o->isActive);
@@ -564,28 +649,65 @@ static int battle_GameObjectBase_setShadowOn(lua_State* L) {
         o->shadowOffset = -6;
     return 0;
 }
+static int battle_GameObjectBase_getActionLock(lua_State* L) {
+    auto o = Stack<SokuLib::v2::GameObjectBase*>::get(L, 1);
+    if (o->gameData.sequenceData) {
+        lua_pushinteger(L, o->gameData.sequenceData->actionLock);
+        return 1;
+    }
+    return 0;
+}
+static int battle_GameObjectBase_getMoveLock(lua_State* L) {
+    auto o = Stack<SokuLib::v2::GameObjectBase*>::get(L, 1);
+    if (o->gameData.sequenceData) {
+        lua_pushinteger(L, o->gameData.sequenceData->moveLock);
+        return 1;
+    }
+    return 0;
+}
 
-static ShadyLua::Renderer::Effect* battle_GameObjectBase_createEffect(SokuLib::v2::GameObjectBase* object, lua_State* L) {
-    auto fxmanager = *reinterpret_cast<SokuLib::v2::EffectManager_Effect**>(0x8985f0);
-    int actionId = luaL_checkinteger(L, 2);
-    int index = 3;
+static ShadyLua::Renderer::Effect* _create_effect(lua_State* L, int index, SokuLib::IEffectManager* fxmanager,
+    SokuLib::Vector2f* defaultPos, char defaultDirection, char defaultLayer, int parentAddr)
+{
+    int actionId = luaL_checkinteger(L, index++);
     float x, y;
     if (Stack<SokuLib::Vector2f>::isInstance(L, index)) {
-        auto xy = Stack<SokuLib::Vector2f>::get(L, index++);//3
+        auto xy = Stack<SokuLib::Vector2f>::get(L, index++);// vector provided
         x = xy.x; y = xy.y;
     }
-    //else if (lua_istable(L, index)) {
-    //    auto xy = Stack<std::vector<float>>::get(L, index++);//3
-    //    x = xy[0]; y = xy[1];
-    //}
     else {
-        x = luaL_optnumber(L, index++, object->position.x);//3
-        y = luaL_optnumber(L, index++, object->position.y);//4
+        if (defaultPos) {
+            x = luaL_checknumber(L, index++); // coordinates required by caller
+            y = luaL_checknumber(L, index++);
+        } else {
+            x = luaL_optnumber(L, index++, defaultPos->x);
+            y = luaL_optnumber(L, index++, defaultPos->y);
+        }
     }
-    char direction = luaL_optinteger(L, index++, object->direction);
-    char layer = luaL_optinteger(L, index++, 1);
-    auto fx = fxmanager->CreateEffect(actionId, x, y, direction, layer, (int)object);
+    char direction = static_cast<char>(luaL_optinteger(L, index++, defaultDirection));
+    char layer = static_cast<char>(luaL_optinteger(L, index++, defaultLayer));
+    auto fx = fxmanager->CreateEffect(actionId, x, y, direction, layer, parentAddr);
     return (ShadyLua::Renderer::Effect*)fx;
+}
+
+static ShadyLua::Renderer::Effect* battle_GameObjectBase_createEffect(SokuLib::v2::GameObjectBase* object, lua_State* L) {
+    auto fxmanager = EffectManager_Effect_instance;
+    return _create_effect(L, 2, fxmanager, &object->position, object->direction, 1, (int)object);
+}
+
+static ShadyLua::Renderer::Effect* battle_createEffect(lua_State* L) {
+    auto fxmanager = EffectManager_Effect_instance;
+    return _create_effect(L, 1, fxmanager, nullptr, 1, 1, 0);
+}
+
+static ShadyLua::Renderer::Effect* battle_createInfoEffect(lua_State* L) {
+    auto fxmanager = &SokuLib::v2::InfoManagerBase::instance->effects;
+    return _create_effect(L, 1, fxmanager, nullptr, 1, 1, 0);
+}
+
+static ShadyLua::Renderer::Effect* battle_createWeatherEffect(lua_State* L) {
+    auto fxmanager = &SokuLib::v2::WeatherManager::instance->effects;
+    return _create_effect(L, 1, fxmanager, nullptr, 1, 1, 0);
 }
 
 static void battle_GameObjectBase_setHitBoxData(SokuLib::v2::GameObjectBase* object, lua_State* L) {
@@ -622,6 +744,24 @@ static std::string battle_GameObject_getCustomData(SokuLib::v2::GameObject* obje
     int size = luaL_checkinteger(L, 2);
     return std::string((const char*)object->customData, size);
 }
+
+static bool battle_GameObject_checkTurnIntoCrystals(SokuLib::v2::GameObject* object, lua_State* L) {
+    return object->checkTurnIntoCrystals(
+        lua_toboolean(L, 2),
+        luaL_checkinteger(L, 3),
+        luaL_checkinteger(L, 4),
+        static_cast<float>(luaL_optnumber(L, 5, 0.0)),
+        static_cast<float>(luaL_optnumber(L, 6, 0.0))
+    );
+}
+static void battle_Player_consumeCard(SokuLib::v2::Player* player, lua_State* L) {
+    return player->consumeCard(
+        luaL_optinteger(L, 2, 0),
+        luaL_optinteger(L, 3, 0),
+        luaL_optinteger(L, 4, 60)
+    );
+}
+
 static ShadyLua::CustomDataProxy battle_CustomData_fromPtr(int addr) {
     return ShadyLua::CustomDataProxy((void*)addr);
 }
@@ -733,15 +873,39 @@ static int battle_random(lua_State* L) {
 
 template <typename T> static inline T& castFromPtr(size_t addr) { return *(T*)addr; }
 
+template <int value> static inline int* enumMap() {
+    static const int valueHolder = value; return (int*)&valueHolder;
+}
+
 void ShadyLua::LualibBattle(lua_State* L) {
+    using SokuLib::DrawUtils::DxSokuColor;
     getGlobalNamespace(L)
         .beginNamespace("battle")
+            .beginClass<SokuLib::DrawUtils::DxSokuColor>("ColorEx")
+                .addStaticFunction("fromPtr", castFromPtr<DxSokuColor>)
+                //.addConstructor<void (*)()>()
+                .addStaticFunction("__call", &battle_colorex_ctor)//simulate factory
+                .addData<unsigned int>("value", &DxSokuColor::color, true)
+                .addData<unsigned char>("a", &DxSokuColor::a, true)
+                .addData<unsigned char>("r", &DxSokuColor::r, true)
+                .addData<unsigned char>("g", &DxSokuColor::g, true)
+                .addData<unsigned char>("b", &DxSokuColor::b, true)
+                .addFunction("__add", &DxSokuColor::operator+)
+                .addFunction("__mul", &DxSokuColor::operator*<lua_Number>)
+                .addFunction("__tostring", &battle_colorex_tostring)
+            .endClass()
             .beginClass<SokuLib::RenderInfo>("RenderInfo")
+                .addStaticProperty("NONE", enumMap<0>(), false)
+		        .addStaticProperty("GRAYSCALE", enumMap<1>(), false)
+                .addStaticProperty("OVERLAY", enumMap<2>(), false)
+                .addStaticProperty("GLOW", enumMap<3>(), false)
                 .addStaticFunction("fromPtr", castFromPtr<SokuLib::RenderInfo>)
                 .addConstructor<void (*)()>()
-                .addData<unsigned int>("color", &SokuLib::RenderInfo::color, true)
+                .addData<unsigned int>("color", MEMBER_ADDRESS(unsigned int, SokuLib::RenderInfo, color), true)
+                .addProperty("colorEx", MEMBER_ADDRESS(DxSokuColor, SokuLib::RenderInfo, color), true)
                 .addData<int>("shaderType", &SokuLib::RenderInfo::shaderType, true)
-                .addData<unsigned int>("shaderColor", &SokuLib::RenderInfo::shaderColor, true)
+                .addData<unsigned int>("shaderColor", MEMBER_ADDRESS(unsigned int, SokuLib::RenderInfo, shaderColor), true)
+                .addProperty("shaderColorEx", MEMBER_ADDRESS(DxSokuColor, SokuLib::RenderInfo, shaderColor), true)
                 .addProperty("scale", &SokuLib::RenderInfo::scale, true)
                 .addData("xRotation", &SokuLib::RenderInfo::xRotation, true)
                 .addData("yRotation", &SokuLib::RenderInfo::yRotation, true)
@@ -801,19 +965,27 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addStaticFunction("fromPtr", castFromPtr<SokuLib::v2::GameObject>)
                 .addProperty("lifetime", &SokuLib::v2::GameObject::lifetime, true)
                 .addProperty("layer", BYTE_FIELD_GETTER(SokuLib::v2::GameObject, layer), BYTE_FIELD_SETTER(SokuLib::v2::GameObject, layer))
-                .addProperty("parentPlayerB", &SokuLib::v2::GameObject::parentPlayerB)
-                .addProperty("parentObjectB", &SokuLib::v2::GameObject::parentB)
+                .addProperty("parentA", &SokuLib::v2::GameObject::parentA, false)
+                .addProperty("parentPlayer", &SokuLib::v2::GameObject::parentPlayerB, false) //maybe a better name
+                    .addProperty("parentPlayerB", &SokuLib::v2::GameObject::parentPlayerB, false)
+                .addProperty("parentObject", &SokuLib::v2::GameObject::parentB, false) //maybe a better name
+                    .addProperty("parentObjectB", &SokuLib::v2::GameObject::parentB, false)
                 
                 .addProperty("customData", battle_GameObject_getCustomDataProxy, battle_GameObject_setCustomDataProxy)
                 .addProperty("gpShort", ShadyLua::ArrayRef_from(&SokuLib::v2::GameObject::gpShort), true)
                 .addProperty("gpFloat", ShadyLua::ArrayRef_from(&SokuLib::v2::GameObject::gpFloat), true)
+                //.addProperty("absorbDensity", battle_GameObjectBase_getActionLock, 0)
+                //.addProperty("bulletDensity", battle_GameObjectBase_getMoveLock, 0)
 
                 .addFunction("getChildrenB", battle_GameObject_getChildren)
+                .addFunction("setParentA", &SokuLib::v2::GameObjectBase::setParentA)
+                .addFunction("setParentObject", &SokuLib::v2::GameObject::setParentB) //maybe a better name
                 .addFunction("setTail", &SokuLib::v2::GameObject::setTail)
+                .addFunction("removeTail", &SokuLib::v2::GameObject::removeTail)
                 .addFunction("getCustomData", battle_GameObject_getCustomData)
                 .addFunction("checkGrazed", &SokuLib::v2::GameObject::checkGrazed)
                 .addFunction("checkProjectileHit", &SokuLib::v2::GameObject::checkProjectileHit)
-                .addFunction("checkTurnIntoCrystals", &SokuLib::v2::GameObject::checkTurnIntoCrystals)
+                .addFunction("checkTurnIntoCrystals", battle_GameObject_checkTurnIntoCrystals)
 
                 .addFunction("createObject", battle_createObject<SokuLib::v2::GameObject, &SokuLib::v2::GameObject::createObject>)
                 .addFunction("createChild", battle_createObject<SokuLib::v2::GameObject, &SokuLib::v2::GameObject::createChild>)
@@ -825,8 +997,8 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addProperty("teamId", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, teamId), false)
                     .addProperty("isRight", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, teamId), false)
                 .addProperty("paletteId", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, paletteId), false)
-                .addProperty("unknown4A6", &SokuLib::v2::Player::spellStopCounter, true)
                 .addProperty("spellStopCounter", &SokuLib::v2::Player::spellStopCounter, true)
+                    .addProperty("unknown4A6", &SokuLib::v2::Player::spellStopCounter, true)
                 .addProperty("groundDashCount", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, groundDashCount), true)
                 .addProperty("airDashCount", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, airDashCount), true)
                 .addProperty("currentSpirit", &SokuLib::v2::Player::currentSpirit, false)
@@ -839,6 +1011,7 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addProperty("comboLimit", &SokuLib::v2::Player::comboLimit, false)
                 .addProperty("untech", &SokuLib::v2::Player::untech, false)
                 .addProperty("skillCancelCount", &SokuLib::v2::Player::skillCancelCount, true)
+                .addProperty("skillCancelUsed", ShadyLua::ArrayRef_from(&SokuLib::v2::Player::skillCancelsUsed), true)
 
                 .addProperty("meleeInvulTimer", &SokuLib::v2::Player::meleeInvulTimer, true)
                 .addProperty("grabInvulTimer", &SokuLib::v2::Player::grabInvulTimer, true)
@@ -856,6 +1029,8 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addProperty("inputBuffered", MEMBER_ADDRESS(SokuLib::KeyInputLight, SokuLib::v2::Player, inputData.bufferedKeyInput), false)
                 .addProperty("gpShort", ShadyLua::ArrayRef_from(&SokuLib::v2::Player::gpShort), true)
                 .addProperty("gpFloat", ShadyLua::ArrayRef_from(&SokuLib::v2::Player::gpFloat), true)
+                .addProperty("actionLock", battle_GameObjectBase_getActionLock, 0)
+                .addProperty("moveLock", battle_GameObjectBase_getMoveLock, 0)
 
                 .addProperty("handCount", MEMBER_ADDRESS(unsigned char, SokuLib::v2::Player, handInfo.cardCount), false)
                 .addFunction("handGetId", battle_Player_handGetId)
@@ -865,13 +1040,31 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addFunction("updateGroundMovement", &SokuLib::v2::Player::updateGroundMovement)
                 .addFunction("decideShotAngle", &SokuLib::v2::Player::decideShotAngle)
                     .addFunction("updateAirMovement", &SokuLib::v2::Player::decideShotAngle)
-                .addFunction("handleCardSwitch", &SokuLib::v2::Player::handleCardSwitch)
-                .addFunction("useSystemCard", &SokuLib::v2::Player::useSystemCard)
-                .addFunction("canSpendSpirit", &SokuLib::v2::Player::canSpendSpirit)
-                .addFunction("getMoveLock", &SokuLib::v2::Player::getMoveLock)
-                .addFunction("canActivateCard", &SokuLib::v2::Player::canActivateCard)
+                .addFunction("applyGroundMechanics", &SokuLib::v2::Player::applyGroundMechanics)
+                .addFunction("applyAirMechanics", &SokuLib::v2::Player::applyAirMechanics)
+                .addFunction("playSFX", &SokuLib::v2::Player::playSFX)
+                .addFunction("checkTurnAround", &SokuLib::v2::Player::checkTurnAround)
+                    .addFunction("unknown487C20", &SokuLib::v2::Player::checkTurnAround)
                 .addFunction("isGrounded", &SokuLib::v2::Player::isGrounded)
+                .addFunction("addCardMeter", &SokuLib::v2::Player::addCardMeter)
+                .addFunction("consumeSpirit", &SokuLib::v2::Player::consumeSpirit)
+                .addFunction("consumeCard", battle_Player_consumeCard)
+                .addFunction("playSpellBackground", &SokuLib::v2::Player::playSpellBackground)
 
+                .addFunction("getMoveLock", &SokuLib::v2::Player::getMoveLock)
+                .addFunction("canSpendSpirit", &SokuLib::v2::Player::canSpendSpirit)
+                .addFunction("canActivateCard", &SokuLib::v2::Player::canActivateCard)
+                .addFunction("useSkill", &SokuLib::v2::Player::useSkill)
+                .addFunction("useSystemCard", &SokuLib::v2::Player::useSystemCard)
+                .addFunction("useSpellCard", &SokuLib::v2::Player::useSpellCard)
+                .addFunction("eventSkillUse", &SokuLib::v2::Player::eventSkillUse)
+                .addFunction("eventSpellUse", &SokuLib::v2::Player::eventSpellUse)
+                .addFunction("eventWeatherCycle", &SokuLib::v2::Player::eventWeatherCycle)
+                .addFunction("refreshInputBuffer", &SokuLib::v2::Player::refreshInputBuffer)
+                .addFunction("refreshCommandBuffer", &SokuLib::v2::Player::refreshInputCombination)
+                    .addFunction("unknown46d950", &SokuLib::v2::Player::refreshInputCombination)
+
+                .addFunction("handleCardSwitch", &SokuLib::v2::Player::handleCardSwitch)
                 .addFunction("handleHJ", &SokuLib::v2::Player::handleHJ)
                 .addFunction("handleHJInput", &SokuLib::v2::Player::handleHJInput)
                 .addFunction("handleGroundDash", &SokuLib::v2::Player::handleGroundDash)
@@ -880,22 +1073,6 @@ void ShadyLua::LualibBattle(lua_State* L) {
                 .addFunction("handleFwdAirDash", &SokuLib::v2::Player::handleFwdAirDash)
                 .addFunction("handleBackAirDash", &SokuLib::v2::Player::handleBackAirDash)
                 .addFunction("handleNormalFlight", &SokuLib::v2::Player::handleNormalFlight)
-
-                .addFunction("useSpellCard", &SokuLib::v2::Player::useSpellCard)
-                .addFunction("useSkill", &SokuLib::v2::Player::useSkill)
-                .addFunction("addCardMeter", &SokuLib::v2::Player::addCardMeter)
-                .addFunction("applyGroundMechanics", &SokuLib::v2::Player::applyGroundMechanics)
-                .addFunction("applyAirMechanics", &SokuLib::v2::Player::applyAirMechanics)
-                .addFunction("playSFX", &SokuLib::v2::Player::playSFX)
-                .addFunction("checkTurnAround", &SokuLib::v2::Player::checkTurnAround)
-                    .addFunction("unknown487C20", &SokuLib::v2::Player::checkTurnAround)
-                .addFunction("playSpellBackground", &SokuLib::v2::Player::playSpellBackground)
-                .addFunction("consumeSpirit", &SokuLib::v2::Player::consumeSpirit)
-                .addFunction("consumeCard", &SokuLib::v2::Player::consumeCard)
-                .addFunction("eventSkillUse", &SokuLib::v2::Player::eventSkillUse)
-                .addFunction("eventSpellUse", &SokuLib::v2::Player::eventSpellUse)
-                .addFunction("eventWeatherCycle", &SokuLib::v2::Player::eventWeatherCycle)
-                .addFunction("unknown46d950", &SokuLib::v2::Player::FUN_0046d950)
             .endClass()
 
             .beginClass<SokuLib::PlayerInfo>("PlayerInfo")
@@ -934,10 +1111,15 @@ void ShadyLua::LualibBattle(lua_State* L) {
 
             .addFunction("replaceCharacter", battle_replaceCharacter)
             .addFunction("replaceObjects", battle_replaceObjects)
+            .addFunction("replaceEffects", battle_replaceEffects)
+            .addFunction("createEffect", battle_createEffect)
+            .addFunction("createInfoEffect", battle_createInfoEffect)
+            .addFunction("createWeatherEffect", battle_createWeatherEffect)
             .addFunction("random", battle_random)
         .endNamespace()
     ;
     RegisterIPCUserdata<SokuLib::RenderInfo, false>(L);
+    RegisterIPCUserdata<SokuLib::DrawUtils::DxSokuColor, false>(L);
     RegisterIPCUserdata<ShadyLua::CustomDataProxy, false>(L);
     RegisterIPCUserdata<SokuLib::v2::GameObjectBase>(L);
     RegisterIPCUserdata<SokuLib::v2::GameObject>(L);

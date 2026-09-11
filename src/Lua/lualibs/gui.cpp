@@ -12,17 +12,132 @@ namespace {
 
     struct ValueProxy {
         union { float number; int gauge; };
+        virtual void getValue1() = 0;
+        virtual float getValue2() = 0;
+		virtual int type_id() = 0;//simulate RTTI, 1 for number, 2 for gauge
+    };
+	struct ValueProxyNumber : public ValueProxy {//char*, int*, float* -> float
+        virtual void getValue1() override {//int getInt()
+            //return static_cast<int>(number);
+            int result = static_cast<int>(number);
+            __asm {
+                mov eax, result
+            }
+        }
+        virtual float getValue2() override { return number; }//float getFloat()
+        virtual int type_id() override { return 1; }
+        ValueProxyNumber() {
+            number = 0;
+        }
+    };
+    struct ValueProxyGauge : public ValueProxy { //int*, short* -> int
+        float offset, length;
+        virtual void getValue1() override {//float getValue()
+            // return (gauge - offset) / length;
+            __asm {
+                ;//ECX = this
+                fild    dword ptr[ecx + 4]  ;// ST(0) = (float)gauge
+                fsub    dword ptr[ecx + 8]  ;// ST(0) -= offset
+                fdiv    dword ptr[ecx + 12] ;// ST(0) /= length
+                ;//ret float value on ST(0)
+            }
+        }
+		virtual float getValue2() override { return 0; }
+        virtual int type_id() override { return 2; }
+        ValueProxyGauge(float offset, float length) : offset(offset), length(length) {
+            gauge = offset;
+		}
     };
 }
 
-static ValueProxy* gui_design_getValue(SokuLib::CDesign::Object* object) {
-    auto value = new ValueProxy(); // <-- this have memory leak, but it's hard to prevent this
+#define MEMBER_ADDRESS(u,s,m) SokuLib::union_cast<u s::*>(&reinterpret_cast<char const volatile&>(((s*)0)->m))
+
+static ValueProxy* gui_design_getValue(SokuLib::CDesign::Object* object, lua_State* L) {
+    using Gauge = SokuLib::CGauge;
+    using Number = SokuLib::CNumber;
     if (*(int*)object == SokuLib::ADDR_VTBL_CDESIGN_GAUGE) {
-        reinterpret_cast<SokuLib::CDesign::Gauge*>(object)->gauge.set(&value->gauge, 0, 100);
+        auto value = SokuLib::NewFct(sizeof(ValueProxyGauge));
+        new (value) ValueProxyGauge{ 
+            static_cast<float>(luaL_optnumber(L, 2, 0.0)), 
+            static_cast<float>(luaL_optnumber(L, 3, 100.0))
+        };
+        reinterpret_cast<SokuLib::CDesign::Gauge*>(object)->gauge.set((Gauge::IValue*)value);
+        return (ValueProxy*)value;
     } else if (*(int*)object == SokuLib::ADDR_VTBL_CDESIGN_NUMBER) {
-        reinterpret_cast<SokuLib::CDesign::Number*>(object)->number.set(&value->number);
+		auto value = SokuLib::NewFct(sizeof(ValueProxyNumber));
+        new (value) ValueProxyNumber{};
+        reinterpret_cast<SokuLib::CDesign::Number*>(object)->number.set((Number::IValue*)value);
+		return (ValueProxy*)value;
     }
-    return value;
+    return nullptr;
+}
+template<auto member, int id>
+int gui_design_getvp(lua_State* L) {
+    auto proxy = Stack<ValueProxy*>::get(L, 1);
+    if (!proxy || proxy->type_id() != id) return 0;
+    if constexpr (id==1) {//number proxy
+        auto* nproxy = static_cast<ValueProxyNumber*>(proxy);
+        Stack<decltype(nproxy->*member)>::push(L, nproxy->*member);
+    } else if constexpr (id==2) {//gauge proxy
+        auto* gproxy = static_cast<ValueProxyGauge*>(proxy);
+        Stack<decltype(gproxy->*member)>::push(L, gproxy->*member);
+    }
+    return 1;
+}
+
+template<auto member, int id>
+int gui_design_setvp(lua_State* L) {
+    auto proxy = Stack<ValueProxy*>::get(L, 1);
+    if (!proxy || proxy->type_id() != id) return 0;
+    if constexpr (id == 1) {
+        auto* nproxy = static_cast<ValueProxyNumber*>(proxy);
+        using T = decltype(nproxy->*member);
+        nproxy->*member = Stack<T>::get(L, 2);
+    }
+    else if constexpr (id == 2) {
+        auto* gproxy = static_cast<ValueProxyGauge*>(proxy);
+        using T = decltype(gproxy->*member);
+        gproxy->*member = Stack<T>::get(L, 2);
+    }
+    return 0;
+}
+
+template<auto ofs, typename Cast = void>
+int gui_design_getsp(lua_State* L) {
+    auto object = Stack<SokuLib::CDesign::Object*>::get(L, 1);
+    if (!object || *(int*)object != SokuLib::ADDR_VTBL_CDESIGN_SPRITE)
+        return 0;
+
+    auto& prop = reinterpret_cast<SokuLib::CDesign::Sprite*>(object)->sprite.*ofs;
+
+    using T = std::remove_reference_t<decltype(prop)>;
+    if constexpr (std::is_void_v<Cast>) {
+        Stack<T>::push(L, prop);
+    } else if constexpr (std::is_pointer_v<Cast>) {
+        using C = std::remove_pointer_t<Cast>;
+        Stack<Cast>::push(L, reinterpret_cast<Cast>(&prop));
+    } else {
+        Stack<Cast>::push(L, *reinterpret_cast<Cast>(&prop));
+    }
+    return 1;
+}
+template<auto ofs, typename Cast = void>
+int gui_design_setsp(lua_State* L) {
+    auto object = Stack<SokuLib::CDesign::Object*>::get(L, 1);
+    if (!object || *(int*)object != SokuLib::ADDR_VTBL_CDESIGN_SPRITE)
+        return 0;
+
+    auto& prop = reinterpret_cast<SokuLib::CDesign::Sprite*>(object)->sprite.*ofs;
+
+    using T = std::remove_reference_t<decltype(prop)>;
+
+    if constexpr (std::is_void_v<Cast>) {
+        prop = Stack<T>::get(L, 2);
+    } else {
+        *reinterpret_cast<Cast*>(&prop) = Stack<Cast>::get(L, 2);
+    }
+
+    return 0;
 }
 
 static int gui_OpenMenu(lua_State* L) {
@@ -55,6 +170,12 @@ static int gui_renderer_getEffects(lua_State* L) {
     if (lua_gettop(L) < 1) return luaL_error(L, "instance of gui.Renderer not found");
     auto renderer = Stack<ShadyLua::Renderer*>::get(L, 1);
     Stack<ShadyLua::EffectManagerProxy*>::push(L, &renderer->effects);
+    return 1;
+}
+
+static int gui_Effect_getPtr(lua_State* L) {
+    auto o = Stack<ShadyLua::Renderer::Effect*>::get(L, 1);
+    lua_pushinteger(L, (int)o);
     return 1;
 }
 
@@ -278,7 +399,7 @@ int ShadyLua::Renderer::createEffect(lua_State* L) {
     int layer = (argc < 6) ? 0 : luaL_checkinteger(L, 6);
     Effect* effect = (Effect*) effects.CreateEffect(id, x, y, dir, layer, 0);
     Stack<Effect*>::push(L, effect);
-    activeLayers.insert(layer);
+    if (effect) activeLayers.insert(layer);
     return 1;
 }
 
@@ -307,7 +428,7 @@ int ShadyLua::Renderer::destroy(lua_State* L) {
             }
         } else if (Stack<Effect*>::Helper::isInstance(L, i)) {
             auto effect = Stack<Effect*>::get(L, i);
-            effect->unknown158 = false;
+            effect->lifetime = false;
         } else if (Stack<MenuCursorProxy*>::Helper::isInstance(L, i)) {
             if (cursors.empty()) continue;
             auto cursor = Stack<MenuCursorProxy*>::get(L, i);
@@ -324,7 +445,7 @@ void ShadyLua::Renderer::clear() {
     cursors.clear();
     guiSchema.clear();
     sprites.clear();
-    effects.ClearPattern();
+    effects.ClearPattern();//old fix
     activeLayers.clear();
     RemoveShow();
 }
@@ -354,6 +475,11 @@ bool ShadyLua::Renderer::RemoveShow() {
     return true;
 }
 
+ShadyLua::Renderer::~Renderer() {
+    guiSchema.clear();
+    RemoveShow();
+}
+
 static int font_loadFontFile(lua_State* L) {
     auto readFile = luabridge::getGlobal(L, "readfile");
     const char* filepath = luaL_checkstring(L, 1);
@@ -366,6 +492,13 @@ static int font_loadFontFile(lua_State* L) {
 
 ShadyLua::MenuProxy::MenuProxy(int handler, lua_State* L)
     : processHandler(handler), data(newTable(L)), script(ShadyLua::ScriptMap[L]) {}
+
+inline ShadyLua::MenuProxy::~MenuProxy() {
+    if (processHandler != LUA_REFNIL && script) {
+        std::lock_guard lock(script->mutex);
+        luaL_unref(script->L, LUA_REGISTRYINDEX, processHandler);
+    }
+}
 
 void ShadyLua::MenuProxy::_() {}
 int ShadyLua::MenuProxy::onProcess() {
@@ -400,6 +533,86 @@ int ShadyLua::EffectManagerProxy::loadPattern(lua_State* L) {
     int reserve = argc < 3 ? 0 : luaL_checkinteger(L, 3);
     LoadPattern(name, reserve);
     return 0;
+}
+
+int ShadyLua::EffectManagerProxy::setUpdateHandler(lua_State* L) {
+    const int argc = lua_gettop(L);
+    // clear handler when nil or no second argument
+    if (argc < 2 || lua_isnil(L, 2)) {
+        if (updateHandler != LUA_REFNIL && script) {
+            luaL_unref(script->L, LUA_REGISTRYINDEX, updateHandler);
+        }
+        updateHandler = LUA_REFNIL;
+        script = nullptr;
+        return 0;
+    }
+    if (!lua_isfunction(L, 2)) return luaL_argerror(L, 2, "expected function or nil");
+    // create ref for new callback on this lua_State
+    lua_pushvalue(L, 2);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    // release previous ref
+    if (updateHandler != LUA_REFNIL && script) {
+        luaL_unref(script->L, LUA_REGISTRYINDEX, updateHandler);
+    }
+    updateHandler = ref;
+    script = ShadyLua::ScriptMap[L];
+    return 0;
+}
+
+void ShadyLua::EffectManagerProxy::Update() {
+    for (auto it = effects.begin(); it != effects.end(); ) {
+        auto fx = *it;
+        bool skipped = false;
+        if (updateHandler != LUA_REFNIL && script) {
+            std::lock_guard scriptGuard(script->mutex);
+            lua_State* L = script->L;
+            lua_rawgeti(L, LUA_REGISTRYINDEX, updateHandler);
+            Stack<ShadyLua::Renderer::Effect*>::push(L, fx);
+            lua_pushinteger(L, fx->frameState.actionId);
+            if (lua_pcall(L, 2, 1, 0)) {
+                Logger::Error(lua_tostring(L, -1));
+            }
+            else if (!lua_isnil(L, -1)) {
+                skipped = true;//lua_toboolean(L, -1);
+            } lua_pop(L, 1);
+        }
+        if (!skipped) {//default handler
+            if (fx->advanceFrame()) {
+                //--fx->unknown158;
+            }
+        }
+        if (fx->lifetime == 0) {//lifetime
+            (handles.*SokuLib::union_cast<void(decltype(handles)::*)(int)>(0x45ed10))(fx->handle);//texture related?
+            //erase fx
+            it = effects.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    //do not use org vfunc update, which could be replaced by battle.replaceEffects
+    //SokuLib::v2::EffectManager_Select::Update();
+}
+
+SokuLib::v2::EffectObjectBase* ShadyLua::EffectManagerProxy::CreateEffect(int action, float x, float y, char dir, char layer, int parent) {
+    if (patternById.find(action) == patternById.end()) return nullptr;//avoid crash
+    SokuLib::v2::EffectObjectBase* inserted = reinterpret_cast<SokuLib::v2::EffectObjectBase* (__fastcall*)(DWORD This)>(0x423f80)((DWORD(this) + 4));
+    inserted->parent = (SokuLib::v2::AnimationObject*)parent;
+    inserted->textures = &textureIds;
+    inserted->patternMap = &patternById;
+    inserted->setAction(action);
+    inserted->position.x = x; inserted->position.y = y;
+    inserted->direction = dir;
+    inserted->layer = layer;
+    //do not use org vfunc init, which could be replaced by battle.replaceEffects
+    //inserted->initializeAction();
+    return inserted;
+}
+
+inline ShadyLua::EffectManagerProxy::~EffectManagerProxy() {
+    if (updateHandler != LUA_REFNIL && script) {
+        std::lock_guard lock(script->mutex);
+        luaL_unref(script->L, LUA_REGISTRYINDEX, updateHandler);
+    }
 }
 
 std::unordered_multimap<SokuLib::IScene*, ShadyLua::SceneProxy*> ShadyLua::SceneProxy::listeners;
@@ -491,15 +704,23 @@ void ShadyLua::LualibGui(lua_State* L) {
             .endClass()
             .beginClass<SokuLib::CDesign::Object>("DesignObject")
                 .addStaticFunction("fromPtr", castFromPtr<SokuLib::CDesign::Object>)
-                .addData("x", &SokuLib::CDesign::Object::x2, true)
-                .addData("y", &SokuLib::CDesign::Object::y2, true)
+                .addData("offset", MEMBER_ADDRESS(SokuLib::Vector2f, SokuLib::CDesign::Object, x1))
+                .addData("position", MEMBER_ADDRESS(SokuLib::Vector2f, SokuLib::CDesign::Object, x2))
+                    .addData("x", &SokuLib::CDesign::Object::x2, true)
+                    .addData("y", &SokuLib::CDesign::Object::y2, true)
+                .addProperty("anchor", gui_design_getsp<&SokuLib::Sprite::pos, SokuLib::Vector2f*>, gui_design_setsp<&SokuLib::Sprite::pos>)
+                .addProperty("scale", gui_design_getsp<&SokuLib::Sprite::scale, SokuLib::Vector2f*>, gui_design_setsp<&SokuLib::Sprite::scale>)
+                .addProperty("rotation", gui_design_getsp<&SokuLib::Sprite::rotation>, gui_design_setsp<&SokuLib::Sprite::rotation>)
+                .addProperty("size", gui_design_getsp<&SokuLib::Sprite::size, SokuLib::Vector2f*>, gui_design_setsp<&SokuLib::Sprite::size>)
                 .addData("isActive", &SokuLib::CDesign::Object::active, true)
                 .addFunction("setColor", &SokuLib::CDesign::Object::setColor)
                 .addFunction("getValueControl", gui_design_getValue)
             .endClass()
             .beginClass<ValueProxy>("DesignValue")
-                .addData("gauge", &ValueProxy::gauge, true)
-                .addData("number", &ValueProxy::number, true)
+                .addProperty("number", gui_design_getvp<&ValueProxyNumber::number, 1>, gui_design_setvp<&ValueProxyNumber::number, 1>)
+                .addProperty("gauge", gui_design_getvp<&ValueProxyGauge::gauge, 2>, gui_design_setvp<&ValueProxyGauge::gauge, 2>)
+                .addProperty("gaugeOffset", gui_design_getvp<&ValueProxyGauge::offset, 2>, gui_design_setvp<&ValueProxyGauge::offset, 2>)
+                .addProperty("gaugeLength", gui_design_getvp<&ValueProxyGauge::length, 2>, gui_design_setvp<&ValueProxyGauge::length, 2>)
             .endClass()
             .beginClass<SokuLib::KeyInputLight>("KeyInputLight")
                 .addStaticFunction("fromPtr", castFromPtr<SokuLib::KeyInputLight>)
@@ -541,21 +762,43 @@ void ShadyLua::LualibGui(lua_State* L) {
                 .addFunction("pgDn", &MenuCursorProxy::pgDn)
             .endClass()
             .beginClass<ShadyLua::EffectManagerProxy>("EffectManager")
+                .addFunction("setUpdater", &ShadyLua::EffectManagerProxy::setUpdateHandler)
                 .addFunction("loadResource", &ShadyLua::EffectManagerProxy::loadPattern)
                 .addFunction("clear", &ShadyLua::EffectManagerProxy::ClearPattern)
                 .addFunction("clearEffects", &ShadyLua::EffectManagerProxy::ClearEffects)
             .endClass()
             .beginClass<ShadyLua::Renderer::Effect>("Effect")
-                .addData("isEnabled", &ShadyLua::Renderer::Effect::isActive, true)
-                .addData("isAlive", &ShadyLua::Renderer::Effect::unknown158, true)
+                .addStaticData("SelectEffect", enumMap<ShadyLua::Renderer::SelectEffect>(), false)
+                .addStaticData("BattleEffect", enumMap<ShadyLua::Renderer::BattleEffect>(), false)
+                .addStaticData("InfoEffect", enumMap<ShadyLua::Renderer::InfoEffect>(), false)
+                .addStaticData("WeatherEffect", enumMap<ShadyLua::Renderer::WeatherEffect>(), false)
+
+                .addProperty("ptr", gui_Effect_getPtr, 0)
                 .addData("position", &ShadyLua::Renderer::Effect::position, true)
                 .addData("speed", &ShadyLua::Renderer::Effect::speed, true)
                 .addData("gravity", &ShadyLua::Renderer::Effect::gravity, true)
                 .addData("center", &ShadyLua::Renderer::Effect::center, true)
+                .addProperty("direction", BYTE_FIELD_GETTER(ShadyLua::Renderer::Effect, direction), BYTE_FIELD_SETTER_CASTED(SokuLib::Direction, ShadyLua::Renderer::Effect, direction))
+                .addProperty("renderInfo", &ShadyLua::Renderer::Effect::renderInfos, true)
+                .addProperty("isGui", &ShadyLua::Renderer::Effect::isGui, true)
+                    
+                .addData("lifetime", &ShadyLua::Renderer::Effect::lifetime, true)
+                    .addData("isAlive", &ShadyLua::Renderer::Effect::lifetime, true)
+                .addProperty("parent", MEMBER_ADDRESS(SokuLib::v2::GameObjectBase*, ShadyLua::Renderer::Effect, parent), false)
+                .addProperty("layer", BYTE_FIELD_GETTER(ShadyLua::Renderer::Effect, layer), BYTE_FIELD_SETTER(ShadyLua::Renderer::Effect, layer))
+                // frameState
+                .addProperty("actionId", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.actionId), false)
+                .addProperty("sequenceId", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.sequenceId), false)
+                .addProperty("poseId", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.poseId), false)
+                .addProperty("poseFrame", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.poseFrame), false)
+                .addProperty("currentFrame", MEMBER_ADDRESS(unsigned int, ShadyLua::Renderer::Effect, frameState.currentFrame), false)
+                .addProperty("sequenceSize", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.sequenceSize), false)
+                .addProperty("poseDuration", MEMBER_ADDRESS(unsigned short, ShadyLua::Renderer::Effect, frameState.poseDuration), false)
                 // TODO render options
                 .addFunction("setActionSequence", &ShadyLua::Renderer::Effect::setActionSequence)
                 .addFunction("setAction", &ShadyLua::Renderer::Effect::setAction)
                 .addFunction("setSequence", &ShadyLua::Renderer::Effect::setSequence)
+                .addFunction("advanceFrame", &ShadyLua::Renderer::Effect::advanceFrame)
                 .addFunction("resetSequence", &ShadyLua::Renderer::Effect::resetSequence)
                 .addFunction("prevSequence", &ShadyLua::Renderer::Effect::prevSequence)
                 .addFunction("nextSequence", &ShadyLua::Renderer::Effect::nextSequence)

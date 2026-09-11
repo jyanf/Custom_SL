@@ -41,8 +41,15 @@ namespace ShadyLua {
     };
 
     class EffectManagerProxy : public SokuLib::v2::EffectManager_Select {
+        int updateHandler = LUA_REFNIL;
+        ShadyLua::LuaScript* script;//could also get it from SceneProxy/MenuProxy ctor
+        //static void __fastcall replUpdate();
     public:
         int loadPattern(lua_State* L);
+        int setUpdateHandler(lua_State* L);
+        virtual void Update() override;
+        virtual SokuLib::v2::EffectObjectBase* CreateEffect(int action, float x, float y, char dir, char layer, int parent) override;
+        virtual ~EffectManagerProxy();
     };
 
     static auto& BoxSprite = *(SokuLib::CDesign::Sprite**)0x89a390;
@@ -62,10 +69,13 @@ namespace ShadyLua {
         bool isActive = true;
 
         using Effect = SokuLib::v2::SelectEffectObject;
-        ~Renderer() {
-            guiSchema.clear();
-            RemoveShow();
-        }
+        enum EffectType {
+            SelectEffect= 0,
+            BattleEffect,
+            InfoEffect,
+            WeatherEffect
+        };
+        ~Renderer();
         void update();
         void render();
 
@@ -91,7 +101,7 @@ namespace ShadyLua {
         Renderer renderer;
 
         MenuProxy(int handler, lua_State* L);
-        ~MenuProxy() override = default;
+        ~MenuProxy() override;
         void _() override;
         int onProcess() override;
         int onRender() override;
@@ -121,6 +131,7 @@ namespace ShadyLua {
         inline void prepare() { if (!handle) { handle = new SokuLib::SWRFont(); handle->create(); }  handle->setIndirect(*this); }
     };
 
+    //helpers below
     class CustomDataProxy {//for battle.Object.customData
         void* addr = addr;
     public:
@@ -138,6 +149,22 @@ namespace ShadyLua {
 
     template <typename TT, size_t N, typename T> static ShadyLua::ArrayRef<T, N, TT>* ArrayRef_castFrom(T(*ptr)[N]) { return (ShadyLua::ArrayRef<T, N, TT>*)(ptr); }
     template <typename TT, size_t N, typename T, class C> static ShadyLua::ArrayRef<T, N, TT> C::* ArrayRef_castFrom(T(C::* ptr)[N]) { return (ShadyLua::ArrayRef<T, N, TT> C::*)(ptr); }
+
+    template<typename Class, auto Field>
+    static int getByteField(lua_State* L) {
+        auto o = luabridge::Stack<Class*>::get(L, 1);
+        lua_pushinteger(L, o->*Field);
+        return 1;
+    }
+    template<typename Class, auto Field, typename Cast = char>
+    static int setByteField(lua_State* L) {
+        auto o = luabridge::Stack<Class*>::get(L, 1);
+        o->*Field = (Cast)luaL_checkinteger(L, 2);
+        return 0;
+    }
+    #define BYTE_FIELD_GETTER(t, f) getByteField<t, &t::f>
+    #define BYTE_FIELD_SETTER_CASTED(c, t, f) setByteField<t, &t::f, c>
+    #define BYTE_FIELD_SETTER(t, f) setByteField<t, &t::f>
 }
 
 namespace luabridge {

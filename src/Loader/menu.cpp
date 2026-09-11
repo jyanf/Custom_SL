@@ -223,7 +223,9 @@ void ModMenu::_() {}
 
 int ModMenu::onProcess() {
 	(guide.*SokuLib::union_cast<void (SokuLib::Guide::*)()>(0x443220))(); // Update
-	if (ModPackage::Notify()) viewDirty = listDirty = true;
+	auto noticeFlag = ModPackage::Notify();
+	viewDirty |= noticeFlag;
+	listDirty |= noticeFlag & ModPackage::NOTIFY_FILE;
 	if (ModPackage::descMutex.try_lock_shared()) {
 		if (listDirty) {
 			modList.updateList();
@@ -450,6 +452,19 @@ void ModMenu::updateView(int index) {
 	} else {
 		package->downloadPreview();
 		viewPreview.dxHandle = 0;
+	}
+	//prefetch images
+	size_t radius = max(index, ModPackage::descPackage.size()-1-index);
+	radius = min(radius, PREVIEW_PREFETCH_RADIUS);
+	for (int di = 1; di <= radius; ++di) {
+		if (index + di < ModPackage::descPackage.size()) {
+			auto package = ModPackage::descPackage[index + di];
+			if (package->previewName.empty()) package->downloadPreview();
+		}
+		if (index - di >= 0) {
+			auto package = ModPackage::descPackage[index - di];
+			if (package->previewName.empty()) package->downloadPreview();
+		}
 	}
 }
 
