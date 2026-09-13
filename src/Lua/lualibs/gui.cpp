@@ -326,6 +326,7 @@ void ShadyLua::Renderer::update() {
  namespace {
     static const auto setRenderMode = SokuLib::union_cast<void (SokuLib::Renderer::*)(int)>(0x404b80);
     static const auto renderMode = SokuLib::union_cast<int SokuLib::Renderer::*>(0xC);
+    static const auto _setStencilMode = SokuLib::union_cast<void (SokuLib::Renderer::*)(int, char)>(0x404e30);
 }
 void ShadyLua::Renderer::render() {
     if (!isActive) return;
@@ -593,6 +594,39 @@ void ShadyLua::EffectManagerProxy::Update() {
     //SokuLib::v2::EffectManager_Select::Update();
 }
 
+void ShadyLua::EffectManagerProxy::Render(char layer) {
+    //return EffectManager::Render(layer);
+    //org render used SelectEffectObject overrided applyTransform, which doesn't support scale, rotation, isGui, etc.
+    for (auto it = effects.begin(); it != effects.end(); ++it) {
+        auto fx = *it;
+        if (fx->layer != layer) { continue; }
+        //fx->SokuLib::v2::AnimationObject::render();
+                
+        if (fx->clipMask) {//should we support it?
+            //fx->clipMask->DrawStencil()
+            reinterpret_cast<void(__fastcall*)(SokuLib::v2::AnimationObject::SpriteClip*)>(0x4389d0)(fx->clipMask);
+        }
+        fx->SokuLib::v2::AnimationObject::applyTransform();//unoverride
+        switch (fx->frameData->renderGroup) {
+        case 0: case 1:
+            (SokuLib::renderer.*setRenderMode)(1);
+            fx->sprite.setColor(fx->renderInfos.color);
+            break;
+        case 2:
+            auto blend = fx->frameData->blendOptionsPtr;
+            (SokuLib::renderer.*setRenderMode)(blend->mode);
+            fx->sprite.setColor(blend->color);
+            fx->sprite.setColor3(fx->renderInfos.color);
+        }
+        fx->onRenderEnd();
+        if (fx->clipMask) {
+            (SokuLib::renderer.*_setStencilMode)(1, 0);
+            *reinterpret_cast<unsigned char*>(0x8985f8) += 2;
+        }
+    }
+
+}
+
 SokuLib::v2::EffectObjectBase* ShadyLua::EffectManagerProxy::CreateEffect(int action, float x, float y, char dir, char layer, int parent) {
     if (patternById.find(action) == patternById.end()) return nullptr;//avoid crash
     SokuLib::v2::EffectObjectBase* inserted = reinterpret_cast<SokuLib::v2::EffectObjectBase* (__fastcall*)(DWORD This)>(0x423f80)((DWORD(this) + 4));
@@ -603,6 +637,7 @@ SokuLib::v2::EffectObjectBase* ShadyLua::EffectManagerProxy::CreateEffect(int ac
     inserted->position.x = x; inserted->position.y = y;
     inserted->direction = dir;
     inserted->layer = layer;
+    inserted->isGui = true;
     //do not use org vfunc init, which could be replaced by battle.replaceEffects
     //inserted->initializeAction();
     return inserted;
