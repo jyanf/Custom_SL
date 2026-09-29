@@ -1,33 +1,5 @@
 find_package(Git REQUIRED)
 
-function(find_target_output output_var target)
-    if (CMAKE_BUILD_TYPE)
-        set(build_suffix _${CMAKE_BUILD_TYPE})
-    else()
-        set(build_path_suffix Release/)
-    endif()
-
-    get_target_property(filename ${target} OUTPUT_NAME${build_suffix})
-    if (NOT filename)
-        get_target_property(filename ${target} NAME)
-    endif()
-
-    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-        get_target_property(debug_postfix ${target} DEBUG_POSTFIX)
-    endif()
-
-    if (MSVC)
-        set(extension ".lib")
-    else()
-        set(extension ".a")
-        get_property(filename_prefix TARGET ${target} PROPERTY PREFIX)
-    endif()
-
-    get_target_property(path ${target} BINARY_DIR)
-
-    set(${output_var} ${path}/${build_path_suffix}${filename_prefix}${filename}${debug_postfix}${extension} PARENT_SCOPE)
-endfunction()
-
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 set(SKIP_INSTALL_ALL TRUE)
 set(ENABLE_BZIP2 OFF)
@@ -38,13 +10,29 @@ add_library(rapidxml INTERFACE)
 target_include_directories(rapidxml INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/rapidxml)
 
 # zlib Library
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/zlib EXCLUDE_FROM_ALL)
-# TODO better handling of ZLIB_LIBRARY
-find_target_output(ZLIB_LIBRARY zlibstatic)
-set(ZLIB_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/zlib)
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/zlib" "${CMAKE_CURRENT_BINARY_DIR}/zlib" EXCLUDE_FROM_ALL)
+
+set(ZLIB_LIB_INSTALL_PATH "${CMAKE_CURRENT_BINARY_DIR}/zlib/install")
+add_custom_target(zlib_copy_static ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${ZLIB_LIB_INSTALL_PATH}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:zlibstatic>" "${ZLIB_LIB_INSTALL_PATH}/zlibstatic.lib"
+
+    DEPENDS zlibstatic
+    VERBATIM
+)
+# prepare for find_package(ZLIB REQUIRED) in other thirdparty libs
+set(ZLIB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/zlib")
+# set(ZLIB_INCLUDE_DIR ${ZLIB_ROOT})
+set(ZLIB_LIBRARY "${ZLIB_LIB_INSTALL_PATH}/zlibstatic.lib")
+
 find_package(ZLIB REQUIRED)
-target_include_directories(ZLIB::ZLIB INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/zlib)
-add_dependencies(ZLIB::ZLIB zlibstatic)
+if(TARGET ZLIB::ZLIB)
+    get_target_property(ZLIB_INCLUDE_DIRS zlibstatic INTERFACE_INCLUDE_DIRECTORIES)
+    # set(ZLIB_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/zlib" "${CMAKE_CURRENT_BINARY_DIR}/zlib")
+    target_include_directories(ZLIB::ZLIB INTERFACE ${ZLIB_INCLUDE_DIRS})
+    add_dependencies(ZLIB::ZLIB zlib_copy_static)
+endif()
+
 
 # libpng Library
 set(PNG_TESTS OFF)
