@@ -50,20 +50,22 @@ jobs:
     - name: Configure CMake
       shell: pwsh
       run: |
-        cmake -S . -B out/build -G "Visual Studio 17 2022" -A Win32 `
+        cmake -S . -B ./out/build -G "Visual Studio 17 2022" -A Win32 `
           -DCMAKE_MODULE_LINKER_FLAGS="/DEFAULTLIB:${{ github.workspace }}\third_party\d3dx9\lib\d3dx9.lib" `
-          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install"
+          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\out"
     - name: Build
       shell: pwsh
       run: |
-        cmake --build out/build --config Release --verbose
+        $env:CL = '/I"${{ github.workspace }}\out\build\thirdparty\zlib"'
+        cmake --build ./out/build --config Release --verbose
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: build-release
         path: |
-          ${{ github.workspace }}/out/build/**/*.exe
-          ${{ github.workspace }}/out/build/**/*.dll
-          ${{ github.workspace }}/out/build/**/*.dat
+          ${{ github.workspace }}/out/build/src/**/*.exe
+          ${{ github.workspace }}/out/build/src/**/*.dll
+          ${{ github.workspace }}/out/build/src/**/*.dat
+          ${{ github.workspace }}/out/build/src/**/*.pdb
         if-no-files-found: error
