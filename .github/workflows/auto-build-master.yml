@@ -1,21 +1,23 @@
 # This starter workflow is for a CMake project running on a single platform. There is a different starter workflow if you need cross-platform coverage.
 # See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-multi-platform.yml
-name: CMake on a single platform
+name: Multi Build & Packaging
 
 on:
   workflow_dispatch:
+    inputs:
+      skip_download:
+        description: "Do not build package based on the latest release"
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [ "pick4PR" ]
 
 permissions:
   contents: write
-  
-env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-  BUILD_TYPE: Release
 
 jobs:
-  sync-and-build:
+  sync:
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
@@ -39,6 +41,24 @@ jobs:
         git rebase origin/pick4PR
         git push origin upstream-master-action --force-with-lease
     
+  build: 
+    needs: sync 
+    strategy: 
+      fail-fast: false 
+      matrix: 
+        configuration: 
+          - Debug 
+          - Release
+    runs-on: windows-2022
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        ref: upstream-master-action
+        token: ${{ secrets.GITHUB_TOKEN }}
+        submodules: recursive
+    
     - name: Download d3dx9.lib
       shell: pwsh
       run: |
@@ -51,21 +71,194 @@ jobs:
       shell: pwsh
       run: |
         cmake -S . -B ./out/build -G "Visual Studio 17 2022" -A Win32 `
-          -DCMAKE_MODULE_LINKER_FLAGS="/DEFAULTLIB:${{ github.workspace }}\third_party\d3dx9\lib\d3dx9.lib" `
-          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\out"
+          -DCMAKE_MODULE_LINKER_FLAGS="/DEFAULTLIB:${{ github.workspace }}\third_party\d3dx9\lib\d3dx9.lib"
     - name: Build
       shell: pwsh
       run: |
         $env:CL = '/I"${{ github.workspace }}\out\build\thirdparty\zlib"'
-        cmake --build ./out/build --config Release --verbose
+        cmake --build ./out/build --config ${{ matrix.configuration }} --parallel
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-release
-        path: |
-          ${{ github.workspace }}/out/build/src/**/*.exe
-          ${{ github.workspace }}/out/build/src/**/*.dll
-          ${{ github.workspace }}/out/build/src/**/*.dat
-          ${{ github.workspace }}/out/build/src/**/*.pdb
+    # -------------------------------------------------------
+    # Package
+    # -------------------------------------------------------
+    - name: Package ${{ matrix.configuration }}
+      shell: pwsh
+      run: |
+        $root = $env:GITHUB_WORKSPACE
+        $configuration = "${{ matrix.configuration }}"
+        $skipDownload = "${{ inputs.skip_download }}".ToLowerInvariant() -eq "true"
+
+        $buildRoot = "$root\out\build"
+
+        # ---------------------------------------------------
+        # Package directory
+        # ---------------------------------------------------
+        $packageDir = Join-Path `
+          $root `
+          "package\$configuration"
+
+        Remove-Item `
+          -Recurse `
+          -Force `
+          $packageDir `
+          -ErrorAction SilentlyContinue
+        
+        if ($skipDownload) {
+          Write-Host "Skipping previous release download."
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "$packageDir\bin" | Out-Null
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "$packageDir\modules\shady-loader" | Out-Null
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "$packageDir\modules\shady-lua" | Out-Null
+        } else {
+          # ---------------------------------------------------
+          # Download and extract the latest shady-packer release
+          #
+          # Debug   -> Debug.zip
+          # Release -> Release.zip
+          # ---------------------------------------------------
+          $zipName = "$configuration.zip"
+          
+          $downloadUrl = `
+            "https://github.com/enebe-nb/shady-packer/releases/latest/download/$zipName"
+          
+          $downloadPath = `
+            Join-Path $root $zipName
+          
+          Write-Host "Downloading latest shady-packer package:"
+          Write-Host "  $downloadUrl"
+          
+          Invoke-WebRequest `
+            -Uri $downloadUrl `
+            -OutFile $downloadPath
+          
+          # ---------------------------------------------------
+          # Create package directory
+          # ---------------------------------------------------
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path $packageDir | Out-Null
+          
+          # ---------------------------------------------------
+          # Extract base package
+          # ---------------------------------------------------
+          Expand-Archive `
+            -Path $downloadPath `
+            -DestinationPath $packageDir `
+            -Force
+          
+          # ---------------------------------------------------
+          # Remove downloaded ZIP
+          # ---------------------------------------------------
+          Remove-Item `
+            $downloadPath `
+            -Force
+        }
+        # ---------------------------------------------------
+        # Collect configuration-specific executable / DLL files
+        #
+        # These MUST come from:
+        #   out/build/Debug
+        #   out/build/Release
+        # ---------------------------------------------------
+        $configFiles = @{
+          "shady-cli.exe" = `
+            "$packageDir\bin\shady-cli.exe"
+        
+          "shady-dnd-pack.exe" = `
+            "$packageDir\bin\shady-dnd-pack.exe"
+        
+          "shady-loader.dll" = `
+            "$packageDir\modules\shady-loader\shady-loader.dll"
+        
+          "shady-lua.dll" = `
+            "$packageDir\modules\shady-lua\shady-lua.dll"
+        }
+        
+        foreach ($file in $configFiles.Keys) {
+          $source = Get-ChildItem `
+            -Path $buildRoot `
+            -Recurse `
+            -File `
+            -Filter $file |
+            Select-Object -First 1
+        
+          if ($null -eq $source) {
+            throw "Could not find build file '$file' under '$buildRoot'"
+          }
+        
+          Write-Host "Copying $file from:"
+          Write-Host "  $($source.FullName)"
+          Write-Host "  -> $($configFiles[$file])"
+        
+          Copy-Item `
+            -Path $source.FullName `
+            -Destination $configFiles[$file] `
+            -Force
+        }
+        
+        # ---------------------------------------------------
+        # shady-loader.dat is NOT configuration-specific.
+        #
+        # Search the whole out/build directory instead of
+        # out/build/Debug or out/build/Release.
+        # ---------------------------------------------------
+        $loaderDat = Get-ChildItem `
+          -Path "$root\out\build" `
+          -Recurse `
+          -File `
+          -Filter "shady-loader.dat" |
+          Select-Object -First 1
+        
+        if ($null -eq $loaderDat) {
+          throw `
+            "Could not find shady-loader.dat under '$root\out\build'"
+        }
+        
+        Write-Host `
+          "Copying shady-loader.dat: $($loaderDat.FullName)"
+        
+        Copy-Item `
+          -Path $loaderDat.FullName `
+          -Destination "$packageDir\modules\shady-loader\shady-loader.dat" `
+          -Force
+        # ---------------------------------------------------
+        # Copy Lua examples
+        # ---------------------------------------------------
+        $luaExampleDir = "$root\src\Lua\example"
+
+        if (-not (Test-Path $luaExampleDir)) {
+          throw `
+            "Lua example directory does not exist: $luaExampleDir"
+        }
+
+        Copy-Item `
+          -Path "$luaExampleDir\*" `
+          -Destination "$packageDir\modules\shady-lua" `
+          -Recurse `
+          -Force
+
+        Write-Host ""
+        Write-Host "========================================"
+        Write-Host "Configuration: $configuration"
+        Write-Host "Build dirs:"
+        foreach ($dir in $configDirs) {
+          Write-Host "  $($dir.FullName)"
+        }
+        Write-Host "Package dir:   $packageDir"
+        Write-Host "========================================"
+
+    - name: Upload ${{ matrix.configuration }} artifact 
+      uses: actions/upload-artifact@v4 
+      with: 
+        name: ${{ matrix.configuration }} 
+        path: ${{ github.workspace }}/package/${{ matrix.configuration }}/
         if-no-files-found: error
