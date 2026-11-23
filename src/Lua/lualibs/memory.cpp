@@ -463,6 +463,20 @@ static void memory_writeshort(int address, short value) {
     VirtualProtect(reinterpret_cast<LPVOID>(address), 2, dwOldProtect, &dwOldProtect);
 }
 
+static int memory_getlibfunc(lua_State* L) {
+    const char* module = luaL_checkstring(L, 1);
+    const char* name = luaL_optstring(L, 2, "DllMain");
+    
+    auto handle = GetModuleHandleA(module);
+    if (!handle) return 0;
+    
+    auto addr = reinterpret_cast<DWORD>(GetProcAddress(handle, name));
+    if (!addr) return 0;
+    
+    lua_pushinteger(L, addr);
+    return 1;
+}
+
 static int memory_createcallback(lua_State* L) {
     int argc = luaL_checkinteger(L, 1);
 
@@ -575,6 +589,7 @@ void ShadyLua::LualibMemory(lua_State* L) {
                 .addStaticProperty("FASTCALL", enumMap<FuncCall::CALLCONVS::_FASTCALL>(), false)
                 .addFunction("__call", &FuncCall::luacall)
             .endClass()
+            .addCFunction("getlibfunc", memory_getlibfunc)
             .addCFunction("createcallback", memory_createcallback)
             .addCFunction("createfunccall", memory_createfunccall)
             .addCFunction("createvirtualcall", memory_createvirtualcall)
